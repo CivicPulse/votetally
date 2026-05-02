@@ -1,0 +1,21 @@
+# Cloudflare Pages headers file (Netlify-compatible).
+#
+# Defaults serve JS/CSS with Cache-Control: public, max-age=86400 — a 24-hour
+# stale window. That made our deploys invisible to returning visitors until
+# the cache expired. Override here so the browser always revalidates the
+# small handful of assets, while still cheap thanks to Pages' ETag-based
+# 304 responses.
+
+/index.html
+  Cache-Control: public, max-age=0, must-revalidate
+
+/app.js
+  Cache-Control: public, max-age=0, must-revalidate
+
+/styles.css
+  Cache-Control: public, max-age=0, must-revalidate
+
+# turnout.json is fetched cross-origin from R2; if the user later switches
+# back to a same-origin path, this rule is ready.
+/turnout.json
+  Cache-Control: public, max-age=60

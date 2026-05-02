@@ -1,0 +1,189 @@
+/* Minimal news-dashboard styling. Single accent (Georgia-state-red). */
+
+:root {
+  --bg: #fafaf7;
+  --surface: #ffffff;
+  --ink: #1a1a1a;
+  --ink-soft: #555555;
+  --ink-muted: #888888;
+  --accent: #a32638;
+  --accent-soft: rgba(163, 38, 56, 0.08);
+  --rule: #ececea;
+  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
+  --radius: 12px;
+  --max-w: 1080px;
+}
+
+* { box-sizing: border-box; }
+
+html, body {
+  margin: 0;
+  padding: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto,
+               "Helvetica Neue", Arial, sans-serif;
+  font-feature-settings: "ss01", "tnum";
+  -webkit-font-smoothing: antialiased;
+  text-rendering: optimizeLegibility;
+}
+
+.container {
+  max-width: var(--max-w);
+  margin: 0 auto;
+  padding: 0 1.5rem;
+}
+
+.hero {
+  padding: 4rem 0 3rem;
+  border-bottom: 1px solid var(--rule);
+}
+
+.kicker {
+  margin: 0 0 0.5rem;
+  font-size: 0.85rem;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--ink-soft);
+}
+
+.total {
+  margin: 0;
+  font-size: clamp(3.5rem, 12vw, 7rem);
+  font-weight: 700;
+  line-height: 1;
+  letter-spacing: -0.04em;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.subtitle {
+  margin: 0.5rem 0 0;
+  font-size: 1.1rem;
+  color: var(--ink-soft);
+}
+
+.meta {
+  margin: 1.25rem 0 0;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  align-items: center;
+  font-size: 0.9rem;
+}
+
+.delta {
+  display: inline-block;
+  padding: 0.25rem 0.65rem;
+  background: var(--accent-soft);
+  color: var(--accent);
+  border-radius: 999px;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.updated {
+  color: var(--ink-muted);
+}
+
+main {
+  padding: 2rem 0 3rem;
+  display: flex;
+  flex-direction: column;
+  gap: 1.5rem;
+}
+
+.card {
+  background: var(--surface);
+  border: 1px solid var(--rule);
+  border-radius: var(--radius);
+  padding: 1.5rem;
+  box-shadow: var(--shadow);
+}
+
+.card h2 {
+  margin: 0 0 0.25rem;
+  font-size: 1.1rem;
+  font-weight: 600;
+  letter-spacing: -0.01em;
+}
+
+.caption {
+  margin: 0 0 1.25rem;
+  color: var(--ink-muted);
+  font-size: 0.9rem;
+}
+
+.grid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 1.5rem;
+}
+
+@media (min-width: 720px) {
+  .grid { grid-template-columns: 1fr 1fr; }
+}
+
+.chart-wrap {
+  position: relative;
+  height: 280px;
+}
+
+.chart-wrap.small {
+  height: 240px;
+}
+
+.placeholder {
+  height: 100%;
+  display: flex;
+  flex-direction: column;
+  justify-content: center;
+  align-items: center;
+  text-align: center;
+  gap: 0.35rem;
+}
+
+.placeholder-num {
+  margin: 0;
+  font-size: 3.25rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  color: var(--accent);
+  font-variant-numeric: tabular-nums;
+}
+
+.placeholder-label {
+  margin: 0;
+  color: var(--ink-soft);
+  font-size: 0.95rem;
+}
+
+.placeholder-note {
+  margin: 0.5rem 0 0;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  font-style: italic;
+}
+
+footer {
+  padding: 2rem 0 4rem;
+  border-top: 1px solid var(--rule);
+}
+
+.footnote {
+  margin: 1.25rem auto 0;
+  max-width: 60ch;
+  color: var(--ink-muted);
+  font-size: 0.85rem;
+  line-height: 1.55;
+}
+
+.empty p {
+  margin: 0;
+  color: var(--ink-muted);
+  text-align: center;
+  padding: 2rem 0;
+}
+
+.hidden { display: none; }

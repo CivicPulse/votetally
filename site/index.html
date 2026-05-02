@@ -1,0 +1,62 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Bibb County Voter Turnout · 2026 General Primary</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" />
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
+  <link rel="stylesheet" href="styles.css?v=2" />
+</head>
+<body>
+  <header class="hero">
+    <div class="container">
+      <p class="kicker" id="kicker">Bibb County · loading…</p>
+      <h1 class="total" id="total">—</h1>
+      <p class="subtitle" id="subtitle">voters who have cast ballots</p>
+      <p class="meta">
+        <span id="delta-badge" class="delta hidden"></span>
+        <span class="updated" id="updated"></span>
+      </p>
+    </div>
+  </header>
+
+  <main class="container">
+    <section class="card">
+      <h2>Voters added per day</h2>
+      <p class="caption">Daily counts derived from snapshot deltas in Eastern time. The first snapshot is omitted because it represents a backlog from earlier in the early-vote window.</p>
+      <div class="chart-wrap"><canvas id="daily-chart"></canvas></div>
+    </section>
+
+    <div class="grid">
+      <section class="card">
+        <h2>By ballot style</h2>
+        <p class="caption">Mode of voting reported in the file.</p>
+        <div class="chart-wrap small"><canvas id="style-chart"></canvas></div>
+      </section>
+
+      <section class="card">
+        <h2>By party (primary)</h2>
+        <p class="caption">Which primary ballot the voter pulled.</p>
+        <div class="chart-wrap small"><canvas id="party-chart"></canvas></div>
+      </section>
+    </div>
+
+    <section class="card empty hidden" id="empty-state">
+      <p>No turnout data has been published yet for this election. Check back after the first scrape.</p>
+    </section>
+  </main>
+
+  <footer class="container">
+    <p class="footnote">
+      Source: Georgia Secretary of State voter participation history files.
+      This page is updated automatically when the local pipeline pushes a new
+      snapshot to Cloudflare R2. Counts include early in-person, absentee-by-mail,
+      and electronic-ballot delivery; election-day votes are added after the
+      election date passes.
+    </p>
+  </footer>
+
+  <script src="app.js?v=2"></script>
+</body>
+</html>
