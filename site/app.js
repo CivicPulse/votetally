@@ -103,13 +103,79 @@ function formatDay(isoDate) {
 }
 
 function renderDaily(data) {
-  const days = data.by_day || [];
   const ctx = document.getElementById("daily-chart");
   if (!ctx) return;
 
-  // Need at least one day-bucket. Empty until we have ≥2 snapshots
-  // (the first one's delta is intentionally excluded from by_day).
-  if (days.length < 1) {
+  const hubDays = (data.hub && data.hub.by_day_party) || [];
+  const fallbackDays = data.by_day || [];
+
+  // Hub's by_day_party (Early Voting → by Party and Date) is the preferred
+  // source: it's authoritative per-day-per-party turnout from the official
+  // dashboard. Fall back to snapshot-delta-derived voters_added when hub
+  // hasn't scraped that sheet yet.
+  if (hubDays.length >= 1) {
+    new Chart(ctx, {
+      type: "bar",
+      data: {
+        labels: hubDays.map((d) => formatDay(d.date)),
+        datasets: [
+          {
+            label: "Democrat",
+            data: hubDays.map((d) => d.democrat || 0),
+            backgroundColor: PARTY_COLOR.DEMOCRAT,
+            stack: "party",
+          },
+          {
+            label: "Republican",
+            data: hubDays.map((d) => d.republican || 0),
+            backgroundColor: PARTY_COLOR.REPUBLICAN,
+            stack: "party",
+          },
+          {
+            label: "Non-Partisan",
+            data: hubDays.map((d) => d.non_partisan || 0),
+            backgroundColor: PARTY_COLOR["NON-PARTISAN"],
+            stack: "party",
+          },
+        ],
+      },
+      options: {
+        responsive: true,
+        maintainAspectRatio: false,
+        animation: false,
+        plugins: {
+          legend: { position: "bottom", labels: { boxWidth: 12, padding: 12 } },
+          tooltip: {
+            callbacks: {
+              label: (ctx) =>
+                `${ctx.dataset.label}: ${fmt.format(ctx.parsed.y)}`,
+              footer: (items) => {
+                const total = items.reduce((s, it) => s + it.parsed.y, 0);
+                return `Total: ${fmt.format(total)}`;
+              },
+            },
+          },
+        },
+        scales: {
+          x: {
+            stacked: true,
+            grid: { display: false },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+          },
+          y: {
+            stacked: true,
+            beginAtZero: true,
+            ticks: { callback: (v) => fmt.format(v) },
+            grid: { color: "rgba(0,0,0,0.05)" },
+          },
+        },
+      },
+    });
+    return;
+  }
+
+  // Empty-state placeholder: we have no hub data and no snapshot deltas yet.
+  if (fallbackDays.length < 1) {
     const cur = data.current || {};
     ctx.parentElement.replaceChildren(buildPlaceholder({
       total: cur.total || 0,
@@ -122,15 +188,12 @@ function renderDaily(data) {
   new Chart(ctx, {
     type: "bar",
     data: {
-      labels: days.map((d) => formatDay(d.date)),
+      labels: fallbackDays.map((d) => formatDay(d.date)),
       datasets: [{
         label: "Voters added",
-        data: days.map((d) => d.voters_added),
+        data: fallbackDays.map((d) => d.voters_added),
         backgroundColor: ACCENT,
         borderRadius: 4,
-        // Default chart.js bar widths are good — let it auto-fit by category.
-        // categoryPercentage controls horizontal padding between groups,
-        // barPercentage the bar inside its slot.
         categoryPercentage: 0.85,
         barPercentage: 0.75,
       }],
