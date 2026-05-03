@@ -102,6 +102,11 @@ function formatDay(isoDate) {
   });
 }
 
+function setDailyCaption(text) {
+  const el = document.getElementById("daily-caption");
+  if (el) el.textContent = text;
+}
+
 function renderDaily(data) {
   const ctx = document.getElementById("daily-chart");
   if (!ctx) return;
@@ -114,6 +119,10 @@ function renderDaily(data) {
   // dashboard. Fall back to snapshot-delta-derived voters_added when hub
   // hasn't scraped that sheet yet.
   if (hubDays.length >= 1) {
+    setDailyCaption(
+      "In-person early voting per day, broken down by primary ballot pulled. " +
+      "Live from the GA SoS Election Data Hub.",
+    );
     new Chart(ctx, {
       type: "bar",
       data: {
@@ -176,6 +185,7 @@ function renderDaily(data) {
 
   // Empty-state placeholder: we have no hub data and no snapshot deltas yet.
   if (fallbackDays.length < 1) {
+    setDailyCaption("Daily counts will appear after the next scrape.");
     const cur = data.current || {};
     ctx.parentElement.replaceChildren(buildPlaceholder({
       total: cur.total || 0,
@@ -184,6 +194,12 @@ function renderDaily(data) {
     }));
     return;
   }
+
+  setDailyCaption(
+    "Voters added between snapshots, bucketed by Eastern-time calendar day. " +
+    "The first snapshot is omitted because it represents a backlog from " +
+    "earlier in the early-vote window.",
+  );
 
   new Chart(ctx, {
     type: "bar",

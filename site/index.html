@@ -6,7 +6,7 @@
   <title>Bibb County Voter Turnout · 2026 General Primary</title>
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="styles.css?v=2" />
+  <link rel="stylesheet" href="styles.css?v=3" />
 </head>
 <body>
   <header class="hero">
@@ -24,8 +24,8 @@
 
   <main class="container">
     <section class="card">
-      <h2>Voters added per day</h2>
-      <p class="caption">Daily counts derived from snapshot deltas in Eastern time. The first snapshot is omitted because it represents a backlog from earlier in the early-vote window.</p>
+      <h2>Early voting by day</h2>
+      <p class="caption" id="daily-caption">Loading…</p>
       <div class="chart-wrap"><canvas id="daily-chart"></canvas></div>
     </section>
 
@@ -64,6 +64,6 @@
     </p>
   </footer>
 
-  <script src="app.js?v=2"></script>
+  <script src="app.js?v=3"></script>
 </body>
 </html>

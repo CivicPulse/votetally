@@ -44,6 +44,9 @@ experiments/artifacts/
 screenshots/*.png
 screenshots/*.jpg
 
+# Playwright MCP working directory (snapshots, console logs)
+.playwright-mcp/
+
 # Editor / OS
 .vscode/
 .idea/
