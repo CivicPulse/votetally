@@ -11,6 +11,7 @@ from dotenv import load_dotenv
 from rich.console import Console
 from rich.table import Table
 
+from votetally.fetcher import DEFAULT_CDP_ENDPOINT
 from votetally.pipeline import DEFAULT_COUNTY, build_snapshot, process_and_upload
 from votetally.r2 import R2Client, R2Config
 
@@ -42,6 +43,101 @@ def process(zip_path: Path, county: str) -> None:
     """Parse a zip locally and print the snapshot. No R2 contact."""
     snapshot = build_snapshot(zip_path, county=county)
     console.print_json(data=snapshot)
+
+
+@cli.command()
+@click.option("--out-dir", type=click.Path(file_okay=False, path_type=Path), default=None,
+              help="Where to land the downloaded zip. Default: a tempdir.")
+@click.option("--county", default=DEFAULT_COUNTY, show_default=True)
+@click.option("--show-browser", is_flag=True,
+              help="Run Firefox headed for debugging — default is headless.")
+@click.option("--no-upload", is_flag=True,
+              help="Just download and process; skip the R2 upload.")
+@click.option("--cdp", "cdp_endpoint", is_flag=False, flag_value=DEFAULT_CDP_ENDPOINT,
+              default=None, metavar="URL",
+              help="Attach to user-launched Chrome via CDP instead of headless "
+                   "Firefox. Bare --cdp uses http://127.0.0.1:9222. Run "
+                   "`votetally chrome` for the launch command.")
+@click.option("--with-captcha", is_flag=True,
+              help="Force 2captcha solve even in --cdp mode (default: skip; "
+                   "warm Chrome passes reCAPTCHA natively).")
+def fetch(out_dir: Path | None, county: str, show_browser: bool, no_upload: bool,
+          cdp_endpoint: str | None, with_captcha: bool) -> None:
+    """Drive the SOS form, download the zip, process and upload.
+
+    Two modes: default Firefox (uses TWOCAPTCHA_API_KEY) or --cdp attach to a
+    user-launched Chrome (real profile bypasses the bot-check gate).
+    """
+    from votetally.fetcher import fetch_and_download
+    if cdp_endpoint:
+        console.print(f"[blue]→[/blue] attaching to Chrome at {cdp_endpoint}…")
+    else:
+        console.print("[blue]→[/blue] solving reCAPTCHA via 2captcha (5-30s)…")
+    zip_path = fetch_and_download(
+        out_dir=out_dir,
+        headless=not show_browser,
+        cdp_endpoint=cdp_endpoint,
+        with_captcha=with_captcha,
+    )
+    console.print(f"[green]✓[/green] zip downloaded: {zip_path}")
+    if no_upload:
+        snapshot = build_snapshot(zip_path, county=county)
+        console.print_json(data=snapshot)
+        return
+    snapshot, updated, did_write = process_and_upload(zip_path, county=county)
+    if did_write:
+        console.print(
+            f"[green]✓[/green] uploaded turnout.json — {snapshot['county']} total "
+            f"[bold]{snapshot['total']}[/bold] (history len {len(updated['snapshots'])}, "
+            f"by_day len {len(updated.get('by_day', []))})"
+        )
+    else:
+        console.print(
+            f"[yellow]·[/yellow] no change since last scrape "
+            f"({snapshot['county']} total {snapshot['total']}); skipped R2 write"
+        )
+
+
+@cli.command()
+@click.option("--port", default=9222, show_default=True, help="CDP port to expose.")
+@click.option("--profile-dir", default="~/.config/chrome-votetally", show_default=True,
+              help="Dedicated user-data-dir. Chrome 136+ refuses --remote-debugging-port "
+                   "on the default profile, so we use a separate one.")
+@click.option("--launch", is_flag=True,
+              help="Actually run the command instead of just printing it.")
+def chrome(port: int, profile_dir: str, launch: bool) -> None:
+    """Print (or run) the Chrome launch command for --cdp mode.
+
+    First time: launch, then sign in / dismiss any captcha gates manually so
+    the profile gets warm. After that, leave Chrome running and `votetally
+    fetch --cdp` can attach to it.
+    """
+    import shutil
+    import subprocess
+
+    chrome_bin = (
+        shutil.which("google-chrome")
+        or shutil.which("google-chrome-stable")
+        or shutil.which("chromium")
+        or shutil.which("chromium-browser")
+    )
+    if not chrome_bin:
+        console.print("[red]No chrome/chromium binary found in PATH.[/red]")
+        raise click.Abort
+
+    expanded = str(Path(profile_dir).expanduser())
+    cmd = [
+        chrome_bin,
+        f"--remote-debugging-port={port}",
+        f"--user-data-dir={expanded}",
+        "https://mvp.sos.ga.gov/s/voter-history-files",
+    ]
+    if launch:
+        console.print(f"[blue]→[/blue] launching: {' '.join(cmd)}")
+        subprocess.Popen(cmd, start_new_session=True)
+        console.print(f"[green]✓[/green] Chrome started; CDP at http://127.0.0.1:{port}")
+    else:
+        console.print(" ".join(cmd))
 
 
 @cli.command()

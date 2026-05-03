@@ -32,6 +32,11 @@ data/local/
 # Regenerate with: uv run votetally dump-shape > site/turnout.json
 site/turnout.json
 
+# Firefox profile copy used by experiments/ (contains user cookies/history;
+# never commit, never transmit)
+experiments/firefox-profile-copy/
+experiments/artifacts/
+
 # Wrangler local cache (created by npx wrangler pages deploy)
 .wrangler/
 
