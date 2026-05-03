@@ -118,13 +118,23 @@ def fetch_signed_url(
 
     with sync_playwright() as p:
         log.info("attaching to user-launched Chrome via CDP at %s", cdp_endpoint)
-        try:
-            browser = p.chromium.connect_over_cdp(cdp_endpoint)
-        except Exception as e:  # noqa: BLE001
+        # Retry on connect for ~15s so the `chrome --launch & fetch` race
+        # works — Chrome takes a few seconds to bind the debug port.
+        browser = None
+        last_err: Exception | None = None
+        deadline = time.monotonic() + 15
+        while time.monotonic() < deadline:
+            try:
+                browser = p.chromium.connect_over_cdp(cdp_endpoint)
+                break
+            except Exception as e:  # noqa: BLE001
+                last_err = e
+                time.sleep(1.0)
+        if browser is None:
             raise FetchError(
-                f"Could not connect to Chrome at {cdp_endpoint}. "
-                "Run `votetally chrome --launch` first to start a CDP-enabled Chrome."
-            ) from e
+                f"Could not connect to Chrome at {cdp_endpoint} after 15s. "
+                "Run `votetally chrome --launch` first."
+            ) from last_err
 
         if not browser.contexts:
             raise FetchError(
