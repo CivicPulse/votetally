@@ -577,14 +577,35 @@ def fetch_hub_snapshot(
         try:
             log.info("navigating to %s", HUB_URL)
             page.goto(HUB_URL, wait_until="load", timeout=45_000)
-            time.sleep(3)  # let static page settle
 
-            # Click "Go Interactive" inside the mashup iframe
-            mashup_frame = next(
-                (f for f in page.frames if "DH.ELECTION2024" in f.url), None
-            )
+            # Poll for the DH.ELECTION2024 iframe instead of assuming it's
+            # there after a fixed sleep. In headless Chrome (and sometimes
+            # in attached interactive Chrome) this cross-origin S3 iframe
+            # appears 5-15s after the load event. Same screenshot-nudge +
+            # _all_frames trick as the Qlik wait — page.frames silently
+            # caches stale data for cross-origin iframes loaded post-load.
+            mashup_frame: Frame | None = None
+            mashup_deadline = time.monotonic() + 30.0
+            poll = 0
+            while time.monotonic() < mashup_deadline:
+                poll += 1
+                if poll % 5 == 0:
+                    with suppress(Exception):
+                        page.screenshot(timeout=2_000)
+                for fr in _all_frames(page):
+                    if "DH.ELECTION2024" in fr.url:
+                        mashup_frame = fr
+                        break
+                if mashup_frame is not None:
+                    break
+                time.sleep(1.0)
             if mashup_frame is None:
-                raise FetchError("DH.ELECTION2024 iframe never loaded")
+                if diag_dir:
+                    _dump_failure(page, diag_dir, "no-mashup-iframe")
+                raise FetchError(
+                    "DH.ELECTION2024 iframe never loaded within 30s"
+                )
+            log.info("mashup iframe ready after %d polls", poll)
 
             log.info("clicking Go Interactive")
             try:
