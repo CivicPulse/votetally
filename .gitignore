@@ -47,6 +47,9 @@ screenshots/*.jpg
 # Playwright MCP working directory (snapshots, console logs)
 .playwright-mcp/
 
+# Cron wrapper log — appended to on every scheduled run
+scripts/cron-hub.log
+
 # Editor / OS
 .vscode/
 .idea/
