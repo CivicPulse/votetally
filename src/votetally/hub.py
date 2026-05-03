@@ -301,110 +301,117 @@ def _wait_for_qlik(page, timeout: float = QLIK_RENDER_TIMEOUT) -> Frame:
     )
 
 
-PARTY_KEYS = {
-    "Democrat": "democrat",
-    "Republican": "republican",
-    "Non-Partisan": "non_partisan",
-    "Nonpartisan": "non_partisan",
-    "Non Partisan": "non_partisan",
-}
+# Canonical key per Qlik party label. Labels arrive UPPERCASE on the live
+# dashboard ("DEMOCRAT", "NON-PARTISAN") but we compare case-insensitively
+# and squash dashes/spaces so "NON-PARTISAN", "Non Partisan", and
+# "Nonpartisan" all collapse to "non_partisan".
+def _party_key(label: str) -> str | None:
+    canon = re.sub(r"[\s\-_]+", "", label).upper()
+    return {
+        "DEMOCRAT": "democrat",
+        "REPUBLICAN": "republican",
+        "NONPARTISAN": "non_partisan",
+    }.get(canon)
 
 
 def _normalize_date(raw: str) -> str | None:
     """Convert "M/D/YYYY" or "MM/DD/YYYY" to ISO YYYY-MM-DD."""
-    for fmt in ("%m/%d/%Y", "%-m/%-d/%Y"):
-        try:
-            return datetime.strptime(raw, fmt).date().isoformat()
-        except ValueError:
-            continue
-    # Manual fallback for "%-m/%-d/%Y" on platforms where strptime rejects it.
     parts = raw.strip().split("/")
-    if len(parts) == 3:
-        try:
-            m, d, y = (int(p) for p in parts)
-            return f"{y:04d}-{m:02d}-{d:02d}"
-        except ValueError:
-            return None
-    return None
+    if len(parts) != 3:
+        return None
+    try:
+        m, d, y = (int(p) for p in parts)
+        return f"{y:04d}-{m:02d}-{d:02d}"
+    except ValueError:
+        return None
 
 
 def _parse_by_day_party(text: str) -> list[dict]:
     """Parse the "Early Voting (In Person) → by Party and Date" grouped bar chart.
 
-    Expected text-dump layout (mirrors the race chart trick):
-      Bar chart \\n No title \\n
-      {legend party labels in legend order} \\n
-      {date labels in left-to-right order}    # like "4/27/2026"
-      {y-axis tick values e.g. 50, 100} \\n 0 \\n
-      {bar values: 3 per date, in (date, party) reading order}
+    Live dashboard text layout (verified 2026-05-03):
+      Bar chart \\n
+      {date1} \\n {date2} \\n ... \\n {dateN}   # date axis labels, MM/DD/YYYY
+      DEMOCRAT \\n REPUBLICAN \\n NON-PARTISAN \\n  # repeats per date
+      DEMOCRAT \\n REPUBLICAN \\n               # last date may omit a party
+      0 \\n 20 \\n 40 \\n ... \\n {y_max}        # y-axis tick values
+      {bar_value_1} \\n ... \\n {bar_value_M}   # M = total party labels above
+      *Data as of : ...
 
-    Strategy: collect distinct party-legend hits, collect date labels, then
-    take the trailing `len(dates) * len(parties)` integers from the slice
-    after the last date label. Map them back into per-day records.
+    Strategy:
+      1. Slice between "Bar chart" and "*Data as of"
+      2. Pull all date labels in that slice (chart's x-axis)
+      3. Pull party labels (UPPERCASE on the live dashboard)
+      4. Group party labels by detecting the cycle restart (each "DEMOCRAT"
+         starts a new date group); group sizes can vary per date
+      5. The trailing `sum(group_sizes)` numbers in the slice are the bars
     """
-    # Find the chart's section. The Early Voting sheet may have multiple
-    # bar charts; the per-party-per-date one has BOTH date labels AND
-    # party legend labels. We anchor on those.
-    legend_re = r"\b(Democrat|Republican|Non[- ]?Partisan|Nonpartisan)\b"
-    parties_seen: list[str] = []
-    for m in re.finditer(legend_re, text):
-        label = m.group(1)
-        if label not in parties_seen:
-            parties_seen.append(label)
-    if not parties_seen:
+    chart_start = text.find("Bar chart")
+    if chart_start < 0:
         return []
+    chart_end = text.find("*Data as of", chart_start)
+    if chart_end < 0:
+        chart_end = len(text)
+    section = text[chart_start:chart_end]
 
     date_re = r"\b(\d{1,2}/\d{1,2}/\d{4})\b"
-    date_matches = list(re.finditer(date_re, text))
-    # Filter out the "Data as of: ..." stamp date (usually appears once near
-    # the very end of the dump) and the election-date filter date. Keep
-    # consecutive runs of ≥3 dates as the chart's x-axis labels.
-    if len(date_matches) < 3:
+    date_matches = list(re.finditer(date_re, section))
+    if len(date_matches) < 2:
+        return []
+    dates_raw = [m.group(1) for m in date_matches]
+    last_date_end = date_matches[-1].end()
+
+    party_re = r"\b(DEMOCRAT|REPUBLICAN|NON[\s\-]?PARTISAN|NONPARTISAN)\b"
+    party_matches = [
+        m for m in re.finditer(party_re, section, re.IGNORECASE)
+        if m.start() >= last_date_end
+    ]
+    if not party_matches:
         return []
 
-    # Largest contiguous run of date matches whose positions are within
-    # ~120 chars of each other — that's the x-axis label list.
-    runs: list[list] = [[]]
-    last_end = -1
-    for m in date_matches:
-        if last_end >= 0 and (m.start() - last_end) > 120:
-            runs.append([])
-        runs[-1].append(m)
-        last_end = m.end()
-    longest = max(runs, key=len)
-    if len(longest) < 3:
+    # Group party labels into per-date buckets. The first label-name in the
+    # sequence is the cycle anchor (typically DEMOCRAT on this dashboard).
+    anchor = _party_key(party_matches[0].group(1))
+    groups: list[list[str]] = [[]]
+    for m in party_matches:
+        if _party_key(m.group(1)) == anchor and groups[-1]:
+            groups.append([])
+        groups[-1].append(m.group(1))
+
+    if len(groups) != len(dates_raw):
+        log.warning(
+            "by_day_party shape mismatch: %d date labels vs %d party groups",
+            len(dates_raw), len(groups),
+        )
+        # Best-effort: pair as many as we have. Trailing dates without
+        # groups (or vice versa) are dropped rather than guessed.
+
+    last_party_end = party_matches[-1].end()
+    nums_slice = section[last_party_end:]
+    nums = re.findall(r"\b(\d[\d,]*)\b", nums_slice)
+    n_bars = sum(len(g) for g in groups)
+    if len(nums) < n_bars:
+        log.warning("expected ≥%d bar numbers, found %d", n_bars, len(nums))
         return []
+    bar_values = [_parse_int(n) for n in nums[-n_bars:]]
 
-    dates_raw = [m.group(1) for m in longest]
-    last_label_end = longest[-1].end()
-
-    # Bars live in the trailing portion of the chart slice. Find the next
-    # "Data as of" or end-of-chart marker and collect the trailing integers
-    # equal in count to dates × parties.
-    end_marker = text.find("*Data as of", last_label_end)
-    end_marker = text.find("\n\n", last_label_end) if end_marker < 0 else end_marker
-    slice_ = text[last_label_end:end_marker if end_marker > 0 else None]
-    nums = re.findall(r"\b(\d[\d,]*)\b", slice_)
-    n_expected = len(dates_raw) * len(parties_seen)
-    if len(nums) < n_expected:
-        return []
-    bar_values = [_parse_int(n) for n in nums[-n_expected:]]
-
-    # Reading order is normally (date, party): for date 0, party0/party1/party2,
-    # then date 1, ... — but this varies. We try date-major first (most common
-    # in Qlik grouped bars where dates are the x-axis grouping).
     out: list[dict] = []
-    n_parties = len(parties_seen)
-    for i, raw in enumerate(dates_raw):
-        iso = _normalize_date(raw)
-        if not iso:
+    bar_idx = 0
+    for date_raw, party_group in zip(dates_raw, groups, strict=False):
+        iso = _normalize_date(date_raw)
+        if iso is None:
+            bar_idx += len(party_group)
             continue
-        slot = bar_values[i * n_parties: (i + 1) * n_parties]
-        rec: dict = {"date": iso}
-        for party_label, value in zip(parties_seen, slot, strict=False):
-            key = PARTY_KEYS.get(party_label, party_label.lower().replace("-", "_"))
-            rec[key] = value
-        rec["total"] = sum(slot)
+        rec: dict = {"date": iso, "democrat": 0, "republican": 0, "non_partisan": 0}
+        slot_total = 0
+        for label in party_group:
+            value = bar_values[bar_idx] if bar_idx < len(bar_values) else 0
+            bar_idx += 1
+            key = _party_key(label)
+            if key:
+                rec[key] = value
+                slot_total += value
+        rec["total"] = slot_total
         out.append(rec)
     return out
 
