@@ -19,3 +19,12 @@
 # back to a same-origin path, this rule is ready.
 /turnout.json
   Cache-Control: public, max-age=60
+
+# Social-share + favicon assets rarely change. Long cache so first-fetch
+# crawlers (Slack, iMessage, Discord) and returning shares stay fast.
+/og-image.png
+  Cache-Control: public, max-age=604800
+/favicon.svg
+  Cache-Control: public, max-age=604800
+/apple-touch-icon.png
+  Cache-Control: public, max-age=604800
