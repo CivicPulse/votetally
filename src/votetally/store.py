@@ -37,6 +37,21 @@ class DayCount(TypedDict):
     voters_added: int
 
 
+class DayPartyCount(TypedDict, total=False):
+    """One day of in-person early-voting turnout, broken down by party.
+
+    Sourced from the "Early Voting (In Person) → by Party and Date" Qlik
+    sub-tab. Strictly more accurate than the snapshot-delta-derived `by_day`
+    (which can't distinguish parties and groups any same-day deltas).
+    """
+
+    date: str             # ISO YYYY-MM-DD
+    democrat: int
+    republican: int
+    non_partisan: int
+    total: int
+
+
 class HubData(TypedDict, total=False):
     """Live turnout from the GA SoS Election Data Hub Qlik dashboard.
 
@@ -52,6 +67,7 @@ class HubData(TypedDict, total=False):
     active_voters: int
     turnout_pct: float
     by_race: dict[str, int]
+    by_day_party: list[DayPartyCount]
 
 
 class Turnout(TypedDict, total=False):

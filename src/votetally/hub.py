@@ -52,6 +52,10 @@ class HubSnapshot:
     active_voters: int | None = None
     turnout_pct: float | None = None
     by_race: dict[str, int] = field(default_factory=dict)
+    # Per-day per-party early-voting totals scraped from the Early Voting
+    # (In Person) → "by Party and Date" Qlik sub-tab. Each entry has
+    # keys: date (YYYY-MM-DD), democrat, republican, non_partisan, total.
+    by_day_party: list[dict] = field(default_factory=list)
     raw_text: str = ""
 
     def to_dict(self) -> dict:
@@ -63,13 +67,14 @@ class HubSnapshot:
             "active_voters": self.active_voters,
             "turnout_pct": self.turnout_pct,
             "by_race": self.by_race,
+            "by_day_party": self.by_day_party,
         }
 
     def to_hub_data(self) -> dict:
         """The subset stored in turnout.json's `hub` field. Drops raw_text."""
         return {
             k: v for k, v in self.to_dict().items()
-            if v is not None and v != {}
+            if v is not None and v != {} and v != []
         }
 
 
@@ -183,6 +188,75 @@ def _all_frames(page) -> list[Frame]:
     return out
 
 
+def _switch_sheet(page, mashup_frame: Frame, button_id: str) -> None:
+    """Click a sibling sheet button in the mashup iframe and wait for re-render.
+
+    The mashup's `changeSheet(id, btn)` swaps the qlik-embed's sheet-id which
+    causes the inner Qlik iframe URL to change. Patchright's frame tracker
+    needs the screenshot-nudge again to notice the new iframe.
+    """
+    log.info("switching mashup sheet → #%s", button_id)
+    try:
+        mashup_frame.locator(f"#{button_id}").click(timeout=10_000)
+    except PWTimeout as e:
+        raise FetchError(f"sheet button #{button_id} not clickable") from e
+
+
+def _select_chart_sub_tab(qlik_frame: Frame, label: str) -> bool:
+    """Click a Qlik chart's sub-tab (e.g. 'by Party and Date'). Returns True
+    on success. The tabs render as plain text inside a tab container — clicking
+    the matching text label activates it.
+    """
+    log.info("selecting chart sub-tab: %s", label)
+    try:
+        qlik_frame.get_by_text(label, exact=True).first.click(timeout=10_000)
+        time.sleep(2.5)  # let the chart re-render its bars
+        return True
+    except PWTimeout:
+        log.warning("sub-tab %r not clickable", label)
+        return False
+
+
+def _wait_for_qlik_text(page, marker: str, timeout: float = QLIK_RENDER_TIMEOUT) -> Frame:
+    """Poll until SOME qlikcloudgov frame's innerText contains `marker`.
+
+    Used after a sheet switch — the previous frame may still hold the old
+    sheet's text briefly. Returns the most recent qlik frame seen so the
+    caller can re-extract text from it.
+    """
+    deadline = time.monotonic() + timeout
+    last_qlik_frame: Frame | None = None
+    iters = 0
+    while time.monotonic() < deadline:
+        iters += 1
+        if iters % 5 == 0:
+            with suppress(Exception):
+                page.screenshot(timeout=2_000)
+        for fr in _all_frames(page):
+            if "qlikcloudgov.com" not in fr.url:
+                continue
+            last_qlik_frame = fr
+            try:
+                text = fr.evaluate(
+                    "() => document.body && document.body.innerText || ''"
+                )
+            except Exception:  # noqa: BLE001
+                continue
+            if marker in text:
+                log.info("qlik text marker %r appeared after %d polls", marker, iters)
+                return fr
+        time.sleep(1.0)
+    if last_qlik_frame is not None:
+        log.warning(
+            "qlik marker %r never appeared in %.0fs (%d polls); "
+            "returning latest frame anyway", marker, timeout, iters,
+        )
+        return last_qlik_frame
+    raise FetchError(
+        f"No qlikcloudgov.com frame found while waiting for {marker!r}."
+    )
+
+
 def _wait_for_qlik(page, timeout: float = QLIK_RENDER_TIMEOUT) -> Frame:
     """Poll until a Qlik frame contains the rendered KPI text ("Turnout")."""
     deadline = time.monotonic() + timeout
@@ -225,6 +299,114 @@ def _wait_for_qlik(page, timeout: float = QLIK_RENDER_TIMEOUT) -> Frame:
         "Possible causes: anonymous-token rate limit, transient Qlik tenant "
         "issue, or DH page state change."
     )
+
+
+PARTY_KEYS = {
+    "Democrat": "democrat",
+    "Republican": "republican",
+    "Non-Partisan": "non_partisan",
+    "Nonpartisan": "non_partisan",
+    "Non Partisan": "non_partisan",
+}
+
+
+def _normalize_date(raw: str) -> str | None:
+    """Convert "M/D/YYYY" or "MM/DD/YYYY" to ISO YYYY-MM-DD."""
+    for fmt in ("%m/%d/%Y", "%-m/%-d/%Y"):
+        try:
+            return datetime.strptime(raw, fmt).date().isoformat()
+        except ValueError:
+            continue
+    # Manual fallback for "%-m/%-d/%Y" on platforms where strptime rejects it.
+    parts = raw.strip().split("/")
+    if len(parts) == 3:
+        try:
+            m, d, y = (int(p) for p in parts)
+            return f"{y:04d}-{m:02d}-{d:02d}"
+        except ValueError:
+            return None
+    return None
+
+
+def _parse_by_day_party(text: str) -> list[dict]:
+    """Parse the "Early Voting (In Person) → by Party and Date" grouped bar chart.
+
+    Expected text-dump layout (mirrors the race chart trick):
+      Bar chart \\n No title \\n
+      {legend party labels in legend order} \\n
+      {date labels in left-to-right order}    # like "4/27/2026"
+      {y-axis tick values e.g. 50, 100} \\n 0 \\n
+      {bar values: 3 per date, in (date, party) reading order}
+
+    Strategy: collect distinct party-legend hits, collect date labels, then
+    take the trailing `len(dates) * len(parties)` integers from the slice
+    after the last date label. Map them back into per-day records.
+    """
+    # Find the chart's section. The Early Voting sheet may have multiple
+    # bar charts; the per-party-per-date one has BOTH date labels AND
+    # party legend labels. We anchor on those.
+    legend_re = r"\b(Democrat|Republican|Non[- ]?Partisan|Nonpartisan)\b"
+    parties_seen: list[str] = []
+    for m in re.finditer(legend_re, text):
+        label = m.group(1)
+        if label not in parties_seen:
+            parties_seen.append(label)
+    if not parties_seen:
+        return []
+
+    date_re = r"\b(\d{1,2}/\d{1,2}/\d{4})\b"
+    date_matches = list(re.finditer(date_re, text))
+    # Filter out the "Data as of: ..." stamp date (usually appears once near
+    # the very end of the dump) and the election-date filter date. Keep
+    # consecutive runs of ≥3 dates as the chart's x-axis labels.
+    if len(date_matches) < 3:
+        return []
+
+    # Largest contiguous run of date matches whose positions are within
+    # ~120 chars of each other — that's the x-axis label list.
+    runs: list[list] = [[]]
+    last_end = -1
+    for m in date_matches:
+        if last_end >= 0 and (m.start() - last_end) > 120:
+            runs.append([])
+        runs[-1].append(m)
+        last_end = m.end()
+    longest = max(runs, key=len)
+    if len(longest) < 3:
+        return []
+
+    dates_raw = [m.group(1) for m in longest]
+    last_label_end = longest[-1].end()
+
+    # Bars live in the trailing portion of the chart slice. Find the next
+    # "Data as of" or end-of-chart marker and collect the trailing integers
+    # equal in count to dates × parties.
+    end_marker = text.find("*Data as of", last_label_end)
+    end_marker = text.find("\n\n", last_label_end) if end_marker < 0 else end_marker
+    slice_ = text[last_label_end:end_marker if end_marker > 0 else None]
+    nums = re.findall(r"\b(\d[\d,]*)\b", slice_)
+    n_expected = len(dates_raw) * len(parties_seen)
+    if len(nums) < n_expected:
+        return []
+    bar_values = [_parse_int(n) for n in nums[-n_expected:]]
+
+    # Reading order is normally (date, party): for date 0, party0/party1/party2,
+    # then date 1, ... — but this varies. We try date-major first (most common
+    # in Qlik grouped bars where dates are the x-axis grouping).
+    out: list[dict] = []
+    n_parties = len(parties_seen)
+    for i, raw in enumerate(dates_raw):
+        iso = _normalize_date(raw)
+        if not iso:
+            continue
+        slot = bar_values[i * n_parties: (i + 1) * n_parties]
+        rec: dict = {"date": iso}
+        for party_label, value in zip(parties_seen, slot, strict=False):
+            key = PARTY_KEYS.get(party_label, party_label.lower().replace("-", "_"))
+            rec[key] = value
+        rec["total"] = sum(slot)
+        out.append(rec)
+    return out
 
 
 def _parse_snapshot(text: str) -> HubSnapshot:
@@ -288,6 +470,64 @@ def _parse_snapshot(text: str) -> HubSnapshot:
         snap.data_as_of = m.group(1).strip()
 
     return snap
+
+
+def _scrape_early_voting(
+    page, mashup_frame: Frame, *, diag_dir: Path | None = None,
+) -> list[dict]:
+    """Switch the mashup to Early Voting (In Person) and scrape by_day_party.
+
+    Returns [] on any non-catastrophic failure (no sub-tab, no chart text,
+    parser miss). Diagnostic dump is written either way when diag_dir is set,
+    so the parser can be tuned against real text.
+    """
+    _switch_sheet(page, mashup_frame, "EarlyVoting")
+    # The qlik-embed swaps sheet-id; the inner iframe re-loads. Wait for a
+    # text marker that's specific to the early-voting sheet ("Bar chart" is
+    # too generic — present on Total Turnout too). The page header reads
+    # "Early Voting" once the new sheet renders.
+    qlik_frame = _wait_for_qlik_text(page, "Early Voting")
+    time.sleep(3)  # let bars settle
+
+    # Click the "by Party and Date" sub-tab. Order on the dashboard is:
+    # by Party | by Party and Date | by Date | by County | Trend Line
+    if not _select_chart_sub_tab(qlik_frame, "by Party and Date"):
+        log.warning("could not select 'by Party and Date' sub-tab")
+        if diag_dir:
+            _dump_early_voting_diag(page, qlik_frame, diag_dir, label="no-subtab")
+        return []
+    time.sleep(2)
+
+    text = qlik_frame.evaluate("() => document.body.innerText")
+    if diag_dir:
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        page.screenshot(
+            path=str(diag_dir / f"hub-early-{stamp}.png"), full_page=True,
+        )
+        (diag_dir / f"hub-early-{stamp}.txt").write_text(text, encoding="utf-8")
+        log.info(
+            "early-voting diagnostics → %s/hub-early-%s.{png,txt}", diag_dir, stamp,
+        )
+
+    parsed = _parse_by_day_party(text)
+    log.info("parsed %d days of by_day_party rows", len(parsed))
+    return parsed
+
+
+def _dump_early_voting_diag(
+    page, qlik_frame: Frame, diag_dir: Path, *, label: str,
+) -> None:
+    """Save a screenshot + the early-voting frame's text for parser tuning."""
+    diag_dir.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+    base = diag_dir / f"hub-early-{label}-{stamp}"
+    with suppress(Exception):
+        page.screenshot(path=f"{base}.png", full_page=True)
+    with suppress(Exception):
+        text = qlik_frame.evaluate("() => document.body.innerText")
+        Path(f"{base}.txt").write_text(text, encoding="utf-8")
+    log.info("early-voting failure diagnostics saved → %s.{png,txt}", base)
 
 
 def fetch_hub_snapshot(
@@ -368,6 +608,17 @@ def fetch_hub_snapshot(
                 page.screenshot(path=str(diag_dir / f"hub-{stamp}.png"), full_page=True)
                 (diag_dir / f"hub-{stamp}.txt").write_text(text, encoding="utf-8")
                 log.info("diagnostics saved → %s/hub-%s.{png,txt}", diag_dir, stamp)
+
+            # Second pass: switch to the Early Voting (In Person) sheet and
+            # scrape the per-day-per-party breakdown. Selections persist on
+            # the Qlik app, so the BIBB filter we set on Total Turnout still
+            # applies. Best-effort — failures here don't lose the headline.
+            try:
+                snap.by_day_party = _scrape_early_voting(
+                    page, mashup_frame, diag_dir=diag_dir,
+                )
+            except Exception as e:  # noqa: BLE001
+                log.warning("early voting scrape failed (non-fatal): %s", e)
 
             return snap
         finally:
