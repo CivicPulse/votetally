@@ -49,33 +49,27 @@ def process(zip_path: Path, county: str) -> None:
 @click.option("--out-dir", type=click.Path(file_okay=False, path_type=Path), default=None,
               help="Where to land the downloaded zip. Default: a tempdir.")
 @click.option("--county", default=DEFAULT_COUNTY, show_default=True)
-@click.option("--show-browser", is_flag=True,
-              help="Run Firefox headed for debugging — default is headless.")
 @click.option("--no-upload", is_flag=True,
               help="Just download and process; skip the R2 upload.")
-@click.option("--cdp", "cdp_endpoint", is_flag=False, flag_value=DEFAULT_CDP_ENDPOINT,
-              default=None, metavar="URL",
-              help="Attach to user-launched Chrome via CDP instead of headless "
-                   "Firefox. Bare --cdp uses http://127.0.0.1:9222. Run "
-                   "`votetally chrome` for the launch command.")
+@click.option("--cdp", "cdp_endpoint", default=DEFAULT_CDP_ENDPOINT, show_default=True,
+              metavar="URL",
+              help="CDP endpoint to attach to. Default is the local Chrome "
+                   "started by `votetally chrome --launch`.")
 @click.option("--with-captcha", is_flag=True,
-              help="Force 2captcha solve even in --cdp mode (default: skip; "
-                   "warm Chrome passes reCAPTCHA natively).")
-def fetch(out_dir: Path | None, county: str, show_browser: bool, no_upload: bool,
-          cdp_endpoint: str | None, with_captcha: bool) -> None:
-    """Drive the SOS form, download the zip, process and upload.
+              help="Mint a 2captcha token and patch grecaptcha as a "
+                   "break-glass fallback (default: skip; warm Chrome's "
+                   "native reCAPTCHA score suffices).")
+def fetch(out_dir: Path | None, county: str, no_upload: bool,
+          cdp_endpoint: str, with_captcha: bool) -> None:
+    """Drive the SOS form via CDP-attached Chrome, download the zip, upload to R2.
 
-    Two modes: default Firefox (uses TWOCAPTCHA_API_KEY) or --cdp attach to a
-    user-launched Chrome (real profile bypasses the bot-check gate).
+    Requires Chrome to be running with --remote-debugging-port — start it
+    with `votetally chrome --launch` first.
     """
     from votetally.fetcher import fetch_and_download
-    if cdp_endpoint:
-        console.print(f"[blue]→[/blue] attaching to Chrome at {cdp_endpoint}…")
-    else:
-        console.print("[blue]→[/blue] solving reCAPTCHA via 2captcha (5-30s)…")
+    console.print(f"[blue]→[/blue] attaching to Chrome at {cdp_endpoint}…")
     zip_path = fetch_and_download(
         out_dir=out_dir,
-        headless=not show_browser,
         cdp_endpoint=cdp_endpoint,
         with_captcha=with_captcha,
     )
