@@ -66,22 +66,34 @@ def process_hub_and_upload(
     hub_data: HubData, *, r2: R2Client | None = None,
 ) -> tuple[Turnout, bool]:
     """Merge a hub snapshot into turnout.json and upload. Idempotent: skips
-    the write when the hub's `data_as_of` matches what's already in R2.
+    the write when every observable hub field matches what's in R2.
+
+    Dedup compares the full hub payload minus volatile timestamps. Comparing
+    only data_as_of would silently drop new fields (e.g. by_day_party) when
+    they appear or change between runs that share a data_as_of stamp.
     """
     if r2 is None:
         r2 = R2Client(R2Config.from_env())
 
     prev = r2.get_turnout()
-    prev_hub = prev.get("hub", {}) if prev else {}
-    if prev_hub.get("data_as_of") == hub_data.get("data_as_of") \
-            and prev_hub.get("turnout") == hub_data.get("turnout"):
-        log.info("hub data_as_of unchanged from previous; skipping R2 write")
+    prev_hub = dict(prev.get("hub", {})) if prev else {}
+    new_hub = dict(hub_data)
+    # scraped_at is wall-clock per run; data_as_of is the dashboard's stamp,
+    # which only moves when the source updates. Both are compared together
+    # via the rest of the payload — strip scraped_at so identical content
+    # at different times still dedups.
+    prev_hub.pop("scraped_at", None)
+    new_hub.pop("scraped_at", None)
+    if prev_hub == new_hub:
+        log.info("hub payload unchanged from previous; skipping R2 write")
         return prev, False
 
     updated = merge_hub(prev, hub_data)
     r2.put_turnout(updated)
     log.info(
-        "uploaded turnout.json with hub data: turnout=%d data_as_of=%s",
-        hub_data.get("turnout", 0), hub_data.get("data_as_of", ""),
+        "uploaded turnout.json with hub data: turnout=%d data_as_of=%s by_day_party=%d",
+        hub_data.get("turnout", 0),
+        hub_data.get("data_as_of", ""),
+        len(hub_data.get("by_day_party", [])),
     )
     return updated, True
