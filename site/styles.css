@@ -86,6 +86,12 @@ html, body {
   color: var(--ink-muted);
 }
 
+.meta.source {
+  margin-top: 0.5rem;
+  font-size: 0.8rem;
+  color: var(--ink-muted);
+}
+
 main {
   padding: 2rem 0 3rem;
   display: flex;

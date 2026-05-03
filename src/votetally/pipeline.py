@@ -12,7 +12,7 @@ from pathlib import Path
 from votetally.aggregator import Snapshot, aggregate_county
 from votetally.parser import election_id_from_zip_name, parse_voter_zip
 from votetally.r2 import R2Client, R2Config
-from votetally.store import Turnout, is_duplicate_scrape, merge_snapshot
+from votetally.store import HubData, Turnout, is_duplicate_scrape, merge_hub, merge_snapshot
 
 log = logging.getLogger(__name__)
 
@@ -60,3 +60,28 @@ def process_and_upload(zip_path: Path, *, county: str = DEFAULT_COUNTY,
     r2.put_archive(snapshot, snapshot["election_id"], snapshot["scraped_at"])
     log.info("uploaded turnout.json + archive copy for %s", snapshot["election_id"])
     return snapshot, updated, True
+
+
+def process_hub_and_upload(
+    hub_data: HubData, *, r2: R2Client | None = None,
+) -> tuple[Turnout, bool]:
+    """Merge a hub snapshot into turnout.json and upload. Idempotent: skips
+    the write when the hub's `data_as_of` matches what's already in R2.
+    """
+    if r2 is None:
+        r2 = R2Client(R2Config.from_env())
+
+    prev = r2.get_turnout()
+    prev_hub = prev.get("hub", {}) if prev else {}
+    if prev_hub.get("data_as_of") == hub_data.get("data_as_of") \
+            and prev_hub.get("turnout") == hub_data.get("turnout"):
+        log.info("hub data_as_of unchanged from previous; skipping R2 write")
+        return prev, False
+
+    updated = merge_hub(prev, hub_data)
+    r2.put_turnout(updated)
+    log.info(
+        "uploaded turnout.json with hub data: turnout=%d data_as_of=%s",
+        hub_data.get("turnout", 0), hub_data.get("data_as_of", ""),
+    )
+    return updated, True

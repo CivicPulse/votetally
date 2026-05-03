@@ -65,6 +65,13 @@ class HubSnapshot:
             "by_race": self.by_race,
         }
 
+    def to_hub_data(self) -> dict:
+        """The subset stored in turnout.json's `hub` field. Drops raw_text."""
+        return {
+            k: v for k, v in self.to_dict().items()
+            if v is not None and v != {}
+        }
+
 
 def _parse_int(s: str) -> int:
     return int(s.replace(",", ""))

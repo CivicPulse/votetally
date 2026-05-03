@@ -18,6 +18,7 @@
         <span id="delta-badge" class="delta hidden"></span>
         <span class="updated" id="updated"></span>
       </p>
+      <p class="meta source" id="source-line"></p>
     </div>
   </header>
 
@@ -29,6 +30,12 @@
     </section>
 
     <div class="grid">
+      <section class="card" id="race-card" hidden>
+        <h2>By race / ethnicity</h2>
+        <p class="caption">Live from the GA SoS Election Data Hub.</p>
+        <div class="chart-wrap small"><canvas id="race-chart"></canvas></div>
+      </section>
+
       <section class="card">
         <h2>By ballot style</h2>
         <p class="caption">Mode of voting reported in the file.</p>

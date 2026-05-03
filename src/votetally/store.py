@@ -37,12 +37,30 @@ class DayCount(TypedDict):
     voters_added: int
 
 
+class HubData(TypedDict, total=False):
+    """Live turnout from the GA SoS Election Data Hub Qlik dashboard.
+
+    Sourced via `votetally hub`. Fresher than the voter-history zip — the
+    dashboard refreshes hourly while the file regenerates ~daily. Hub
+    carries the headline total + race breakdown that the file doesn't expose.
+    """
+
+    scraped_at: str       # when we scraped (ISO UTC)
+    data_as_of: str       # the dashboard's "Data as of: ..." stamp (their TZ)
+    county: str
+    turnout: int
+    active_voters: int
+    turnout_pct: float
+    by_race: dict[str, int]
+
+
 class Turnout(TypedDict, total=False):
     """The shape of turnout.json that the frontend consumes.
 
-    `current` is the latest full snapshot. `snapshots` is the time series of
-    cumulative observations. `by_day` is the per-day-added view derived from
-    snapshot deltas — what the daily bar chart renders.
+    `current` is the latest full snapshot from the voter-history zip.
+    `snapshots` / `by_day` are derived from a series of those.
+    `hub` is the live snapshot from the Election Data Hub (separate source,
+    refreshed independently — fresher headline, has race breakdown).
     """
 
     election: dict[str, str]
@@ -50,13 +68,15 @@ class Turnout(TypedDict, total=False):
     current: Snapshot
     snapshots: list[HistoryEntry]
     by_day: list[DayCount]
+    hub: HubData
     updated_at: str
 
 
 def empty_turnout() -> Turnout:
     """Initial state when turnout.json doesn't yet exist in R2."""
     return Turnout(
-        election={}, county="", current={}, snapshots=[], by_day=[], updated_at=""
+        election={}, county="", current={}, snapshots=[], by_day=[],
+        hub={}, updated_at="",
     )
 
 
@@ -132,7 +152,28 @@ def merge_snapshot(prev: Turnout | None, new: Snapshot) -> Turnout:
         current=new,
         snapshots=snapshots,
         by_day=compute_by_day(snapshots),
+        hub=prev.get("hub", {}),  # preserve hub data on file-snapshot merges
         updated_at=new["scraped_at"],
+    )
+
+
+def merge_hub(prev: Turnout | None, hub: HubData) -> Turnout:
+    """Update only the `hub` field of turnout.json. Preserves everything else.
+
+    `votetally hub` runs more often than `votetally fetch` (hub data is
+    fresher), so this lets the two sources update independently without
+    stepping on each other.
+    """
+    if prev is None or not prev.get("current"):
+        prev = empty_turnout()
+    return Turnout(
+        election=prev.get("election", {}),
+        county=prev.get("county", hub.get("county", "")),
+        current=prev.get("current", {}),  # type: ignore[typeddict-item]
+        snapshots=prev.get("snapshots", []),
+        by_day=prev.get("by_day", []),
+        hub=hub,
+        updated_at=hub.get("scraped_at", prev.get("updated_at", "")),
     )
 
 

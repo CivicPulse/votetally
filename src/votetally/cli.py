@@ -97,16 +97,20 @@ def fetch(out_dir: Path | None, county: str, no_upload: bool,
               metavar="URL", help="CDP endpoint to attach to.")
 @click.option("--county", default=DEFAULT_COUNTY, show_default=True,
               help="County to filter to. Pass empty string for statewide.")
+@click.option("--no-upload", is_flag=True,
+              help="Just print the snapshot; skip the R2 update.")
 @click.option("--no-diag", is_flag=True,
               help="Skip writing diagnostic screenshot/text under experiments/artifacts/.")
-def hub(cdp_endpoint: str, county: str, no_diag: bool) -> None:
-    """Scrape the GA SoS Election Data Hub for live turnout numbers.
+def hub(cdp_endpoint: str, county: str, no_upload: bool, no_diag: bool) -> None:
+    """Scrape the Election Data Hub for live turnout, upload to R2.
 
-    Drives the Qlik dashboard via the user's already-launched Chrome and
-    pulls Turnout / Active Voters / Turnout % / race breakdown out of the
-    rendered analysis frame.
+    Drives the Qlik dashboard via the user's already-launched Chrome,
+    extracts turnout/active-voters/turnout%/race breakdown, and merges it
+    into turnout.json under the `hub` key. The dashboard reads `hub` as
+    the headline source (fresher than the voter-history file).
     """
     from votetally.hub import fetch_hub_snapshot
+    from votetally.pipeline import process_hub_and_upload
     diag = None if no_diag else Path("experiments/artifacts")
     console.print(f"[blue]→[/blue] attaching to Chrome at {cdp_endpoint}…")
     snap = fetch_hub_snapshot(
@@ -115,6 +119,16 @@ def hub(cdp_endpoint: str, county: str, no_diag: bool) -> None:
         diag_dir=diag,
     )
     console.print_json(data=snap.to_dict())
+    if no_upload:
+        return
+    _, did_write = process_hub_and_upload(snap.to_hub_data())
+    if did_write:
+        console.print(
+            f"[green]✓[/green] turnout.json updated · hub.turnout="
+            f"[bold]{snap.turnout:,}[/bold] · data_as_of {snap.data_as_of}"
+        )
+    else:
+        console.print("[yellow]·[/yellow] hub data unchanged; skipped R2 write")
 
 
 @cli.command()

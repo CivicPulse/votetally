@@ -49,12 +49,37 @@ function formatTimestamp(iso) {
 
 function renderHeadline(data) {
   const cur = data.current || {};
+  const hub = data.hub || {};
   const election = data.election || {};
+
+  // Hub is the preferred headline source — its turnout is hours-fresh while
+  // the file lags 1–2 days. Fall back to the file's `current.total` when
+  // hub data isn't present yet (e.g., before the first `votetally hub` run).
+  const headlineTotal = (typeof hub.turnout === "number")
+    ? hub.turnout
+    : (cur.total || 0);
+  const headlineFreshness = hub.data_as_of || cur.scraped_at;
+
   document.getElementById("kicker").textContent =
     `Bibb County · ${electionDisplay(election)}`;
-  document.getElementById("total").textContent = fmt.format(cur.total || 0);
+  document.getElementById("total").textContent = fmt.format(headlineTotal);
   document.getElementById("updated").textContent =
-    cur.scraped_at ? `Updated ${formatTimestamp(cur.scraped_at)}` : "";
+    headlineFreshness
+      ? (hub.data_as_of
+          ? `As of ${hub.data_as_of}`
+          : `Updated ${formatTimestamp(headlineFreshness)}`)
+      : "";
+
+  // Show the source so the freshness gap between hub and file is honest.
+  const sourceLine = document.getElementById("source-line");
+  if (hub.turnout) {
+    const fileTotal = cur.total || 0;
+    sourceLine.textContent = fileTotal && fileTotal !== hub.turnout
+      ? `Source: GA SoS Election Data Hub · file lags at ${fmt.format(fileTotal)}`
+      : `Source: GA SoS Election Data Hub`;
+  } else if (cur.total) {
+    sourceLine.textContent = `Source: GA SoS voter participation history file`;
+  }
 
   const snapshots = data.snapshots || [];
   if (snapshots.length >= 2) {
@@ -213,15 +238,25 @@ async function main() {
     console.error("turnout fetch failed:", e);
     return;
   }
-  if (!data.current || !data.current.total) {
+  // Empty only if BOTH sources lack data; hub may be present before the
+  // first file scrape, or vice versa.
+  const hasFile = data.current && data.current.total;
+  const hasHub = data.hub && data.hub.turnout;
+  if (!hasFile && !hasHub) {
     document.getElementById("empty-state").classList.remove("hidden");
     return;
   }
   renderHeadline(data);
   renderDaily(data);
-  renderBreakdown("style-chart", data.current.by_ballot_style);
-  renderBreakdown("party-chart", data.current.by_party,
-    (k, i) => PARTY_COLOR[k] || PALETTE[i % PALETTE.length]);
+  if (hasHub && data.hub.by_race) {
+    document.getElementById("race-card").hidden = false;
+    renderBreakdown("race-chart", data.hub.by_race);
+  }
+  if (hasFile) {
+    renderBreakdown("style-chart", data.current.by_ballot_style);
+    renderBreakdown("party-chart", data.current.by_party,
+      (k, i) => PARTY_COLOR[k] || PALETTE[i % PALETTE.length]);
+  }
 }
 
 main();
