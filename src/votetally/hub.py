@@ -93,13 +93,21 @@ def _find_qlik_render_frame(page) -> Frame | None:
 def _select_county(qlik_frame: Frame, county: str) -> bool:
     """Filter Qlik to the given county. Returns True on success, False otherwise.
 
-    Strategy: scroll the filter pane (a virtualized list) until the target
-    county is in view, then click it. Avoids the "focus click selects a
-    county" trap that the press_sequentially approach hit.
+    Strategy:
+      1. If the target county is already in the DOM (Qlik's listbox happened
+         to be scrolled to its alphabet range), click it directly.
+      2. Otherwise find the listbox's scrollable container by looking up the
+         tree from any visible county-shaped row, scroll it to the top, then
+         scroll forward 200px at a time until the target appears.
+
+    The earlier version assumed the pane always started near "APPLING…BANKS"
+    — true in interactive Chrome where prior selections kept BIBB visible,
+    but a fresh Chrome session can land anywhere in the alphabet (e.g.
+    "CAMDEN…CHATTAHOOCHEE"), at which point the alphabet anchor regex
+    finds nothing and the function silently bails.
     """
     log.info("filtering Qlik to county=%s", county)
     target = county.upper()
-    # First check if it's already visible (no scroll needed for nearby counties).
     if qlik_frame.get_by_text(target, exact=True).count() > 0:
         try:
             qlik_frame.get_by_text(target, exact=True).first.click(timeout=5_000)
@@ -108,40 +116,81 @@ def _select_county(qlik_frame: Frame, county: str) -> bool:
         except PWTimeout:
             pass
 
-    # Scroll the County filter's virtualized list. Qlik renders filter panes
-    # with a virtual-scroll container; we scroll within it via JS until the
-    # target text appears.
-    scroll_js = (
-        "() => { const re = /^(APPLING|ATKINSON|BACON|BAKER|BALDWIN|BANKS)$/;"
+    # Find the scrollable listbox by walking up from any uppercase
+    # county-shaped row (a div whose text is ≥3 uppercase letters/spaces
+    # only — APPLING, BIBB, CAMDEN, etc.) and reset its scroll to the top.
+    # Returns True if a scrollable container was found and scrolled, else
+    # False — which means the filter pane structure has changed and the
+    # caller should bail.
+    reset_scroll_js = (
+        "() => {"
+        " const isCounty = t => /^[A-Z][A-Z .'-]+$/.test(t)"
+        "   && t.length >= 3 && t.length <= 30;"
         " const items = Array.from(document.querySelectorAll('div'))"
-        " .filter(d => re.test(d.textContent.trim()));"
-        " if (!items.length) return false;"
-        " let el = items[0];"
-        " while (el && el !== document.body) {"
-        "   const cs = getComputedStyle(el);"
-        "   if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll')"
-        "       && el.scrollHeight > el.clientHeight) {"
-        "     el.scrollTop += 200; return true;"
+        "   .filter(d => isCounty((d.textContent||'').trim())"
+        "     && (d.textContent||'').trim().split('\\n').length === 1);"
+        " for (const start of items) {"
+        "   let el = start;"
+        "   while (el && el !== document.body) {"
+        "     const cs = getComputedStyle(el);"
+        "     if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll')"
+        "         && el.scrollHeight > el.clientHeight) {"
+        "       el.scrollTop = 0; return true;"
+        "     }"
+        "     el = el.parentElement;"
         "   }"
-        "   el = el.parentElement;"
         " }"
-        " return false; }"
+        " return false;"
+        "}"
     )
-    for attempt in range(40):
-        scrolled = qlik_frame.evaluate(scroll_js)
-        if not scrolled:
-            log.warning("could not find scrollable filter pane")
-            return False
-        time.sleep(0.3)
+    if not qlik_frame.evaluate(reset_scroll_js):
+        log.warning("could not find scrollable filter pane to reset")
+        return False
+    time.sleep(0.5)
+
+    # Scroll the same container forward 200px at a time. The scroll-step JS
+    # walks every county-shaped row until it finds one whose ancestor is a
+    # scrollable element, then advances scrollTop. Any candidate works since
+    # they all share the listbox container.
+    scroll_step_js = (
+        "() => {"
+        " const isCounty = t => /^[A-Z][A-Z .'-]+$/.test(t)"
+        "   && t.length >= 3 && t.length <= 30;"
+        " const items = Array.from(document.querySelectorAll('div'))"
+        "   .filter(d => isCounty((d.textContent||'').trim())"
+        "     && (d.textContent||'').trim().split('\\n').length === 1);"
+        " for (const start of items) {"
+        "   let el = start;"
+        "   while (el && el !== document.body) {"
+        "     const cs = getComputedStyle(el);"
+        "     if ((cs.overflowY === 'auto' || cs.overflowY === 'scroll')"
+        "         && el.scrollHeight > el.clientHeight) {"
+        "       const before = el.scrollTop;"
+        "       el.scrollTop += 200;"
+        "       return el.scrollTop !== before;"
+        "     }"
+        "     el = el.parentElement;"
+        "   }"
+        " }"
+        " return false;"
+        "}"
+    )
+    for attempt in range(80):
         if qlik_frame.get_by_text(target, exact=True).count() > 0:
             try:
                 qlik_frame.get_by_text(target, exact=True).first.click(timeout=5_000)
                 time.sleep(2.5)
-                log.info("county filter applied to %s after %d scroll(s)", target, attempt + 1)
+                log.info("county filter applied to %s after %d scroll(s)", target, attempt)
                 return True
             except PWTimeout:
-                continue
-    log.warning("county %r never appeared in filter list after scrolling", target)
+                pass
+        scrolled = qlik_frame.evaluate(scroll_step_js)
+        if not scrolled:
+            # Hit the bottom of the list without finding the target.
+            log.warning("scrolled to bottom of county list without finding %s", target)
+            return False
+        time.sleep(0.3)
+    log.warning("county %r still not visible after 80 scrolls", target)
     return False
 
 
@@ -623,12 +672,28 @@ def fetch_hub_snapshot(
             time.sleep(3)  # let chart numbers settle into final positions
 
             applied_county = None
-            if county and _select_county(qlik_frame, county):
-                applied_county = county
+            if county:
+                if _select_county(qlik_frame, county):
+                    applied_county = county
+                else:
+                    # Hard fail rather than scrape statewide under a
+                    # county-labelled key. Past silent failures here
+                    # produced a turnout.json where hub.county was null
+                    # but hub.turnout was the statewide number — the
+                    # frontend has no way to distinguish that from a
+                    # genuine statewide scrape, so we just refuse.
+                    if diag_dir:
+                        _dump_failure(page, diag_dir, f"county-{county}-not-applied")
+                    raise FetchError(
+                        f"county filter {county!r} could not be applied "
+                        "(filter pane scrolled past the target and the "
+                        "scrollable container couldn't be reset). Refusing "
+                        "to scrape statewide data under a county key."
+                    )
 
             text = qlik_frame.evaluate("() => document.body.innerText")
             snap = _parse_snapshot(text)
-            snap.county = applied_county  # None means statewide
+            snap.county = applied_county  # None only when caller passed county=""
 
             if diag_dir:
                 diag_dir.mkdir(parents=True, exist_ok=True)
