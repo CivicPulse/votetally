@@ -93,6 +93,31 @@ def fetch(out_dir: Path | None, county: str, no_upload: bool,
 
 
 @cli.command()
+@click.option("--cdp", "cdp_endpoint", default=DEFAULT_CDP_ENDPOINT, show_default=True,
+              metavar="URL", help="CDP endpoint to attach to.")
+@click.option("--county", default=DEFAULT_COUNTY, show_default=True,
+              help="County to filter to. Pass empty string for statewide.")
+@click.option("--no-diag", is_flag=True,
+              help="Skip writing diagnostic screenshot/text under experiments/artifacts/.")
+def hub(cdp_endpoint: str, county: str, no_diag: bool) -> None:
+    """Scrape the GA SoS Election Data Hub for live turnout numbers.
+
+    Drives the Qlik dashboard via the user's already-launched Chrome and
+    pulls Turnout / Active Voters / Turnout % / race breakdown out of the
+    rendered analysis frame.
+    """
+    from votetally.hub import fetch_hub_snapshot
+    diag = None if no_diag else Path("experiments/artifacts")
+    console.print(f"[blue]→[/blue] attaching to Chrome at {cdp_endpoint}…")
+    snap = fetch_hub_snapshot(
+        cdp_endpoint=cdp_endpoint,
+        county=county or None,
+        diag_dir=diag,
+    )
+    console.print_json(data=snap.to_dict())
+
+
+@cli.command()
 @click.option("--port", default=9222, show_default=True, help="CDP port to expose.")
 @click.option("--profile-dir", default="~/.config/chrome-votetally", show_default=True,
               help="Dedicated user-data-dir. Chrome 136+ refuses --remote-debugging-port "
