@@ -60,12 +60,12 @@
     "creator": {
       "@type": "Person",
       "name": "Kerry Hatcher",
-      "url": "https://kerryhatcher.com/"
+      "url": "https://www.kerryhatcher.com/"
     },
     "isBasedOn": {
       "@type": "Dataset",
-      "name": "Georgia Voter Participation History",
-      "url": "https://elections.sos.ga.gov/Elections/voterhistory.do",
+      "name": "Georgia Election Data Hub — Unofficial Turnout",
+      "url": "https://sos.ga.gov/page/election-data-hub-unofficial-turnout",
       "creator": {
         "@type": "GovernmentOrganization",
         "name": "Georgia Secretary of State"
@@ -79,7 +79,7 @@
   <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
   <link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Source+Serif+4:ital,wght@0,400;0,600;0,700;1,400&display=swap" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="styles.css?v=13" />
+  <link rel="stylesheet" href="styles.css?v=15" />
 </head>
 <body>
   <header class="hero">
@@ -135,11 +135,14 @@
 
   <footer class="container">
     <p class="footnote">
-      Source: Georgia Secretary of State voter participation history files.
+      Source: <a href="https://sos.ga.gov/page/election-data-hub-unofficial-turnout" target="_blank" rel="noopener">Georgia Secretary of State Election Data Hub — Unofficial Turnout</a>.
       This page is updated automatically when the local pipeline pushes a new
       snapshot to Cloudflare R2. Counts include early in-person, absentee-by-mail,
       and electronic-ballot delivery; election-day votes are added after the
       election date passes.
+    </p>
+    <p class="footnote credit">
+      Created by <a href="https://www.kerryhatcher.com" target="_blank" rel="noopener">Kerry Hatcher</a>.
     </p>
   </footer>
 
