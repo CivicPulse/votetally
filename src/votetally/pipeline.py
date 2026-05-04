@@ -57,15 +57,16 @@ def process_and_upload(zip_path: Path, *, county: str = DEFAULT_COUNTY,
         snapshot["by_ballot_style"],
     )
 
-    prev = r2.get_turnout()
+    prev = r2.get_turnout(county)
     if is_duplicate_scrape(prev, snapshot):
         log.info("snapshot is identical to previous; skipping R2 write")
         return snapshot, prev, False
 
     updated = merge_snapshot(prev, snapshot)
-    r2.put_turnout(updated)
+    r2.put_turnout(updated, county)
     r2.put_archive(snapshot, snapshot["election_id"], snapshot["scraped_at"])
-    log.info("uploaded turnout.json + archive copy for %s", snapshot["election_id"])
+    log.info("uploaded turnout JSON + archive for %s (%s)",
+             snapshot["election_id"], county)
     return snapshot, updated, True
 
 
@@ -85,7 +86,12 @@ def process_hub_and_upload(
     if r2 is None:
         r2 = R2Client(R2Config.from_env())
 
-    prev = r2.get_turnout()
+    # County is carried in hub_data (set by the scraper from the active Qlik
+    # filter). Fall back to BIBB if missing — the only path that yields an
+    # empty county is a deliberate statewide scrape, which currently isn't
+    # wired into cron, so this fallback never fires in production.
+    county = hub_data.get("county") or DEFAULT_COUNTY
+    prev = r2.get_turnout(county)
     prev_hub = dict(prev.get("hub", {})) if prev else {}
     new_hub = dict(hub_data)
     # scraped_at is wall-clock per run; data_as_of is the dashboard's stamp,
@@ -103,13 +109,14 @@ def process_hub_and_upload(
         log.info("hub payload unchanged from previous; refreshing last_checked_at only")
         updated: Turnout = dict(prev) if prev else empty_turnout()  # type: ignore[assignment]
         updated["last_checked_at"] = scraped_at
-        r2.put_turnout(updated)
+        r2.put_turnout(updated, county)
         return updated, False
 
     updated = merge_hub(prev, hub_data)
-    r2.put_turnout(updated)
+    r2.put_turnout(updated, county)
     log.info(
-        "uploaded turnout.json with hub data: turnout=%d data_as_of=%s by_day_party=%d",
+        "uploaded turnout JSON for %s: turnout=%d data_as_of=%s by_day_party=%d",
+        county,
         hub_data.get("turnout", 0),
         hub_data.get("data_as_of", ""),
         len(hub_data.get("by_day_party", [])),

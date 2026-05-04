@@ -1,19 +1,37 @@
-/* Bibb voter turnout dashboard.
+/* Single-county voter turnout dashboard.
+ *
+ * Each page is a separate single-county tracker — Bibb at /, Crawford at
+ * /crawford/, etc. The county is declared on <body data-county="…"> and
+ * the script reads it once at load to pick the right R2 object and the
+ * right kicker label. There is no multi-county view by design (see
+ * PRODUCT.md "Out-of-scope").
  *
  * Single fetch direct from the R2 public bucket. No proxy, no worker on
  * the read path — the bucket needs Access-Control-Allow-Origin set so the
  * browser allows the cross-origin GET. Data is public, so a wildcard
  * origin is fine.
  *
- * For local preview: drop a turnout.json next to index.html and switch
- * DATA_URL to "./turnout.json" temporarily.
+ * For local preview: drop a turnout.json next to index.html and add
+ * ?preview=1 to the URL.
  */
 
-// Production reads R2 directly. Local preview uses ?preview=1 with a
-// hand-built site/turnout.json (gitignored) for design-time testing.
+// County identity is set per-page on <body data-county="…">. Default to
+// bibb so the original /index.html keeps working if the attribute were
+// ever stripped. New counties only need: a body attribute, a clone HTML
+// file under /<county>/, and a corresponding turnout-<county>.json on R2.
+const COUNTY = (document.body.dataset.county || "bibb").toLowerCase();
+const COUNTY_LABEL = {
+  bibb: "Bibb County",
+  crawford: "Crawford County",
+}[COUNTY] || "County";
+
+// BIBB keeps the original bare turnout.json on R2 (the URL is canonical
+// and was the project's only county for months). Sibling counties get
+// turnout-<county>.json. Mirrors r2.turnout_key() on the pipeline side.
+const DATA_FILE = COUNTY === "bibb" ? "turnout.json" : `turnout-${COUNTY}.json`;
 const DATA_URL = new URLSearchParams(location.search).has("preview")
-  ? "./turnout.json"
-  : "https://votetally.kerryhatcher.com/turnout.json";
+  ? `./${DATA_FILE}`
+  : `https://votetally.kerryhatcher.com/${DATA_FILE}`;
 
 const fmt = new Intl.NumberFormat("en-US");
 
@@ -142,7 +160,7 @@ function renderHeadline(data) {
   const headlineFreshness = hub.data_as_of || cur.scraped_at;
 
   document.getElementById("kicker").textContent =
-    `Bibb County · ${electionDisplay(election)}`;
+    `${COUNTY_LABEL} · ${electionDisplay(election)}`;
 
   const totalEl = document.getElementById("total");
   totalEl.textContent = fmt.format(headlineTotal);
@@ -550,7 +568,7 @@ async function main() {
   } catch (e) {
     const aborted = e && e.name === "AbortError";
     document.getElementById("empty-state").classList.remove("hidden");
-    document.getElementById("kicker").textContent = "Bibb County";
+    document.getElementById("kicker").textContent = COUNTY_LABEL;
     document.getElementById("total").textContent = "—";
     document.getElementById("subtitle").textContent =
       aborted ? "couldn't reach the data feed" : "data not available";

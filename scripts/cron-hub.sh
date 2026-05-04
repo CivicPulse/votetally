@@ -70,11 +70,21 @@ for i in $(seq 1 20); do
   sleep 1
 done
 
-log "running hub"
-if uv run votetally hub >>"$LOG" 2>&1; then
-  log "hub run succeeded"
+log "running hub for BIBB"
+if uv run votetally hub --county BIBB >>"$LOG" 2>&1; then
+  log "BIBB hub run succeeded"
 else
-  log "hub run failed (exit $?) — see lines above"
+  log "BIBB hub run failed (exit $?) — see lines above"
+fi
+
+# Run CRAWFORD in the same Chrome session — Turnstile cookie and Qlik app
+# are already warm. Independent failure: a Crawford error doesn't roll
+# back the Bibb run that already wrote turnout.json.
+log "running hub for CRAWFORD"
+if uv run votetally hub --county CRAWFORD >>"$LOG" 2>&1; then
+  log "CRAWFORD hub run succeeded"
+else
+  log "CRAWFORD hub run failed (exit $?) — see lines above"
 fi
 
 kill_chrome

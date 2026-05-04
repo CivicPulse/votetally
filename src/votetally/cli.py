@@ -231,12 +231,14 @@ def watch(watch_dir: Path, county: str) -> None:
 
 
 @cli.command()
-def status() -> None:
-    """Fetch turnout.json from R2 and print a summary."""
+@click.option("--county", default=DEFAULT_COUNTY, show_default=True,
+              help="Which county's turnout JSON to fetch.")
+def status(county: str) -> None:
+    """Fetch the turnout JSON for `county` from R2 and print a summary."""
     r2 = R2Client(R2Config.from_env())
-    data = r2.get_turnout()
+    data = r2.get_turnout(county)
     if not data.get("current"):
-        console.print("[yellow]No turnout.json in R2 yet.[/yellow]")
+        console.print(f"[yellow]No turnout JSON in R2 yet for {county}.[/yellow]")
         return
     cur = data["current"]
     console.print(

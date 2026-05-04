@@ -1,8 +1,10 @@
 # VoteTally — Design Context
 
-A single-page live tracker of Bibb County, Georgia voter turnout for the active election cycle (currently the 2026 General Primary). Static site at `count.kerryhatcher.com`, fed by a local Python+Chrome scrape pipeline pushing JSON to Cloudflare R2.
+A live tracker of Georgia voter turnout for the active election cycle (currently the 2026 General Primary). The flagship page tracks Bibb County at `count.kerryhatcher.com`; sibling pages exist for neighboring counties at `/<county>/` (currently only `/crawford/`). Each page is a single-county tracker — same design, same JSON shape, separate R2 object per county. Static site fed by a local Python+Chrome scrape pipeline pushing per-county JSON to Cloudflare R2.
 
 **Register:** brand. The page IS the product — there is no app surface behind it. Design choices should be committed and identity-strong, not generic-product chrome.
+
+**Architecture:** *single-county per page, multi-instance.* Adding a county adds a sibling page (`/<county>/`) and a sibling JSON object (`turnout-<county>.json`); it never adds a county selector, comparison view, or shared dashboard. Each page belongs to its county, full stop. This keeps "the number is the headline" working for every county and avoids drifting into a multi-county product.
 
 ## Design Context
 
@@ -67,6 +69,7 @@ Voice: plain, factual, locally-grounded. Names the county, names the source, nam
 
 ### Out-of-scope (so it stays that way)
 
-- Multi-county comparison, statewide rollups, historical drill-downs. Those are different products.
+- Multi-county comparison, statewide rollups, historical drill-downs. Those are different products. Sibling county pages (Bibb, Crawford, …) are separate instances of the same single-county tracker — never a unified view.
+- Cross-links between sibling county pages. Each page is isolated; a Crawford visitor who wants Bibb has to know the URL. This is deliberate — adding a county switcher would whisper "multi-county product" and undermine the editorial single-county posture.
 - User accounts, saved views, sharing widgets beyond OG metadata. Already shareable; resist adding more.
 - "Predict the winner" / partisan framing. Turnout is non-partisan by construction; the page must stay that way.

@@ -26,6 +26,20 @@ log = logging.getLogger(__name__)
 TURNOUT_KEY = "turnout.json"
 
 
+def turnout_key(county: str) -> str:
+    """R2 object key for a given county.
+
+    BIBB keeps the original bare `turnout.json` key — it was the project's
+    only county for months and the URL is canonical. Sibling counties get
+    a county-keyed file (`turnout-crawford.json`, etc.) so each page reads
+    its own object. Single-county-per-file by design; this is not a
+    multi-county dataset.
+    """
+    if county.upper() == "BIBB":
+        return TURNOUT_KEY
+    return f"turnout-{county.lower()}.json"
+
+
 @dataclass(frozen=True)
 class R2Config:
     account_id: str
@@ -61,25 +75,28 @@ class R2Client:
             config=Config(signature_version="s3v4", retries={"max_attempts": 3}),
         )
 
-    def get_turnout(self) -> Turnout:
-        """Fetch turnout.json. Returns empty Turnout if the object doesn't exist."""
+    def get_turnout(self, county: str) -> Turnout:
+        """Fetch the turnout JSON for `county`. Returns empty Turnout when the
+        object doesn't yet exist (first run for a new county)."""
+        key = turnout_key(county)
         try:
-            resp = self.s3.get_object(Bucket=self.cfg.bucket, Key=TURNOUT_KEY)
+            resp = self.s3.get_object(Bucket=self.cfg.bucket, Key=key)
             data = json.loads(resp["Body"].read())
             return data  # type: ignore[no-any-return]
         except ClientError as e:
             code = e.response.get("Error", {}).get("Code", "")
             if code in ("NoSuchKey", "404"):
-                log.info("turnout.json not yet in R2; starting fresh")
+                log.info("%s not yet in R2; starting fresh", key)
                 return empty_turnout()
             raise
 
-    def put_turnout(self, data: Turnout) -> None:
-        """Replace turnout.json with the new state. Short cache-control so the
+    def put_turnout(self, data: Turnout, county: str) -> None:
+        """Replace the turnout JSON for `county`. Short cache-control so the
         edge re-fetches within a few minutes of a scrape."""
+        key = turnout_key(county)
         self.s3.put_object(
             Bucket=self.cfg.bucket,
-            Key=TURNOUT_KEY,
+            Key=key,
             Body=json.dumps(data, indent=2).encode("utf-8"),
             ContentType="application/json",
             CacheControl="public, max-age=300",

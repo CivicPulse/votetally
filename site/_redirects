@@ -1,0 +1,7 @@
+# Cloudflare Pages redirect rules. The /bibb path doesn't exist as a real
+# page — Bibb is the canonical / default — but a curious neighbor might
+# guess the URL after seeing /crawford/. Send them to the root rather
+# than letting them hit a 404.
+/bibb       /             301
+/bibb/      /             301
+/bibb/*     /:splat       301
