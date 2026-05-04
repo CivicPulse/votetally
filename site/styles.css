@@ -1,53 +1,83 @@
-/* Bibb voter turnout — editorial type system, single accent (Georgia red).
- * Two themes share one DOM: light is morning-paper, dark is late-edition.
- * Tokens are the only thing that changes between modes. */
+/* Bibb voter turnout — sister-site palette to bibbunited.com.
+ * Light is "Community" mode (white canvas, navy + crimson). Dark is
+ * "Urgent" mode (slate-900 canvas, lifted red). Both modes share one DOM;
+ * tokens are the only thing that changes between them. */
 
 :root {
-  --bg: #fafaf7;
+  /* Light "Community" mode — mirrors bibbunited.com defaults. */
+  --bg: #ffffff;
   --surface: #ffffff;
-  --ink: #1a1a1a;
-  --ink-soft: #555555;
-  --ink-muted: #888888;
-  --accent: #a32638;
-  --accent-soft: rgba(163, 38, 56, 0.08);
-  --rule: #ececea;
-  --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
+  --ink: #111827;
+  --ink-soft: #4b5563;
+  --ink-muted: #6b7280;
+  --accent: #dc2626;
+  --accent-soft: rgba(220, 38, 38, 0.08);
+  --navy: #1b2a4a;
+  --navy-soft: rgba(27, 42, 74, 0.08);
+  /* Kicker is navy in light (civic-identity moment on white canvas), but
+   * navy disappears on the slate-900 dark canvas — dark mode swaps to a
+   * soft slate so the kicker stays legible without competing with the
+   * crimson hero numeral. */
+  --kicker-ink: var(--navy);
+  --rule: #d1d5db;
+  --shadow: 0 1px 2px rgba(15, 23, 42, 0.04), 0 4px 12px rgba(15, 23, 42, 0.04);
   --radius: 12px;
   --max-w: 1080px;
 
   /* Chart palette — read by app.js via getComputedStyle so Chart.js options
    * stay theme-aware without duplicating the token table in JS. */
-  --chart-grid: rgba(0, 0, 0, 0.05);
-  --chart-tick: #555555;
+  --chart-grid: rgba(17, 24, 39, 0.06);
+  --chart-tick: #4b5563;
   --chart-ring: #ffffff;
   /* "Remaining capacity" fill for meter-style charts (turnout pie). Tuned
    * to read as background, not data, so a tiny accent slice lands visually. */
-  --chart-empty: rgba(0, 0, 0, 0.06);
+  --chart-empty: rgba(17, 24, 39, 0.06);
 }
 
-/* Dark mode is preview-only until the design pass is finished — entered
- * exclusively via the ?theme=dark URL override (set by the inline script in
- * index.html). The OS-based prefers-color-scheme auto-switch is intentionally
- * not wired up here; restore it once dark is ready to ship. All neutrals on
- * a single warm ramp at hue 22° make dark read as "the same paper at a
- * different hour" rather than an inverted theme. The accent is lifted in
- * lightness for AA contrast on the dark canvas, pushed to the sRGB gamut
- * boundary in chroma so it stays brand-red rather than coral. */
+/* Dark "Urgent" mode — mirrors bibbunited.com [data-mode="urgent"].
+ * Slate-900 canvas, slate-800 surfaces, lifted Tailwind red-500 accent.
+ * The accent is brighter than light mode for AA contrast on the dark
+ * canvas while staying recognisably the brand red. */
 :root[data-theme="dark"] {
-  --bg: oklch(0.18 0.02 22);
-  --surface: oklch(0.21 0.018 22);
-  --ink: oklch(0.95 0.005 22);
-  --ink-soft: oklch(0.78 0.008 22);
-  --ink-muted: oklch(0.62 0.012 22);
-  --rule: oklch(0.30 0.012 22);
-  --accent: oklch(0.62 0.20 22);
-  --accent-soft: oklch(0.62 0.20 22 / 0.18);
-  /* Drop shadows on dark canvases read as smudges; the card edge does the work. */
+  --bg: #0f172a;
+  --surface: #1e293b;
+  --ink: #f8fafc;
+  --ink-soft: #cbd5e1;
+  --ink-muted: #94a3b8;
+  --accent: #ef4444;
+  --accent-soft: rgba(239, 68, 68, 0.18);
+  --navy: #1b2a4a;
+  --navy-soft: rgba(255, 255, 255, 0.06);
+  --kicker-ink: #cbd5e1;
+  --rule: #334155;
   --shadow: none;
-  --chart-grid: oklch(1 0 0 / 0.06);
-  --chart-tick: oklch(0.78 0.008 22);
-  --chart-ring: oklch(0.21 0.018 22);
-  --chart-empty: oklch(1 0 0 / 0.05);
+  --chart-grid: rgba(248, 250, 252, 0.06);
+  --chart-tick: #94a3b8;
+  --chart-ring: #1e293b;
+  --chart-empty: rgba(248, 250, 252, 0.06);
+}
+
+/* OS-level dark preference, only when no explicit ?theme=… override is set.
+ * The :not([data-theme]) guard lets the URL flag win without flash. */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme]) {
+    --bg: #0f172a;
+    --surface: #1e293b;
+    --ink: #f8fafc;
+    --ink-soft: #cbd5e1;
+    --ink-muted: #94a3b8;
+    --accent: #ef4444;
+    --accent-soft: rgba(239, 68, 68, 0.18);
+    --navy: #1b2a4a;
+    --navy-soft: rgba(255, 255, 255, 0.06);
+    --kicker-ink: #cbd5e1;
+    --rule: #334155;
+    --shadow: none;
+    --chart-grid: rgba(248, 250, 252, 0.06);
+    --chart-tick: #94a3b8;
+    --chart-ring: #1e293b;
+    --chart-empty: rgba(248, 250, 252, 0.06);
+  }
 }
 
 * { box-sizing: border-box; }
@@ -57,11 +87,26 @@ html, body {
   padding: 0;
   background: var(--bg);
   color: var(--ink);
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto,
-               "Helvetica Neue", Arial, sans-serif;
+  font-family: "Source Serif 4", Georgia, Cambria, "Times New Roman", Times, serif;
   font-feature-settings: "ss01", "tnum";
+  font-size: 16px;
+  line-height: 1.5;
   -webkit-font-smoothing: antialiased;
   text-rendering: optimizeLegibility;
+}
+
+/* Sister-site typography: Barlow Condensed display, Source Serif body.
+ * h1/h2 uppercase mirrors bibbunited's Community-mode heading treatment. */
+h1, h2 {
+  font-family: "Barlow Condensed", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.005em;
+}
+
+h3, h4 {
+  font-family: "Barlow Condensed", "Helvetica Neue", Arial, sans-serif;
+  font-weight: 700;
 }
 
 .container {
@@ -72,25 +117,31 @@ html, body {
 
 .hero {
   padding: 4rem 0 3rem;
-  border-bottom: 1px solid var(--rule);
 }
 
 .kicker {
   margin: 0 0 0.5rem;
-  font-size: 0.85rem;
-  letter-spacing: 0.08em;
+  font-family: "Barlow Condensed", "Helvetica Neue", Arial, sans-serif;
+  font-size: 0.95rem;
+  font-weight: 600;
+  letter-spacing: 0.12em;
   text-transform: uppercase;
-  color: var(--ink-soft);
+  color: var(--kicker-ink);
 }
 
+/* The hero numeral keeps Barlow Condensed for that late-edition headline
+ * weight. tabular-nums via font-feature-settings stays critical for the
+ * count-up animation so digit widths don't reflow. */
 .total {
   margin: 0;
+  font-family: "Barlow Condensed", "Helvetica Neue", Arial, sans-serif;
   font-size: clamp(3.5rem, 12vw, 7rem);
   font-weight: 700;
-  line-height: 1;
-  letter-spacing: -0.04em;
+  line-height: 0.95;
+  letter-spacing: -0.02em;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
+  text-transform: none;
 }
 
 .subtitle {
@@ -143,17 +194,22 @@ main {
   box-shadow: var(--shadow);
 }
 
+/* Section-heading rule: 2px accent underline scoped to the title text,
+ * lifted directly from bibbunited.com's .section-heading-rule utility. */
 .card h2 {
   margin: 0 0 0.25rem;
-  font-size: 1.1rem;
-  font-weight: 600;
-  letter-spacing: -0.01em;
+  font-size: 1.4rem;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  display: inline-block;
+  padding-bottom: 0.4rem;
+  border-bottom: 2px solid var(--accent);
 }
 
 .caption {
-  margin: 0 0 1.25rem;
+  margin: 0.75rem 0 1.25rem;
   color: var(--ink-muted);
-  font-size: 0.9rem;
+  font-size: 0.95rem;
 }
 
 .grid {
@@ -187,9 +243,10 @@ main {
 
 .placeholder-num {
   margin: 0;
+  font-family: "Barlow Condensed", "Helvetica Neue", Arial, sans-serif;
   font-size: 3.25rem;
   font-weight: 700;
-  letter-spacing: -0.03em;
+  letter-spacing: -0.02em;
   line-height: 1;
   color: var(--accent);
   font-variant-numeric: tabular-nums;
@@ -210,15 +267,14 @@ main {
 
 footer {
   padding: 2rem 0 4rem;
-  border-top: 1px solid var(--rule);
 }
 
 .footnote {
   margin: 1.25rem auto 0;
-  max-width: 60ch;
+  max-width: 65ch;
   color: var(--ink-muted);
-  font-size: 0.85rem;
-  line-height: 1.55;
+  font-size: 0.9rem;
+  line-height: 1.6;
 }
 
 .empty p {
