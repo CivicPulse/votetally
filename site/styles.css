@@ -1,4 +1,6 @@
-/* Minimal news-dashboard styling. Single accent (Georgia-state-red). */
+/* Bibb voter turnout — editorial type system, single accent (Georgia red).
+ * Two themes share one DOM: light is morning-paper, dark is late-edition.
+ * Tokens are the only thing that changes between modes. */
 
 :root {
   --bg: #fafaf7;
@@ -12,6 +14,40 @@
   --shadow: 0 1px 2px rgba(0, 0, 0, 0.04), 0 4px 12px rgba(0, 0, 0, 0.04);
   --radius: 12px;
   --max-w: 1080px;
+
+  /* Chart palette — read by app.js via getComputedStyle so Chart.js options
+   * stay theme-aware without duplicating the token table in JS. */
+  --chart-grid: rgba(0, 0, 0, 0.05);
+  --chart-tick: #555555;
+  --chart-ring: #ffffff;
+}
+
+@media (prefers-color-scheme: dark) {
+  :root {
+    /* All neutrals on a single warm ramp at hue 22°, low chroma, varying
+     * lightness. This is what makes dark mode read as "the same paper at a
+     * different hour" instead of "an inverted theme." */
+    --bg: oklch(0.18 0.02 22);
+    --surface: oklch(0.21 0.018 22);
+    --ink: oklch(0.95 0.005 22);
+    --ink-soft: oklch(0.78 0.008 22);
+    --ink-muted: oklch(0.62 0.012 22);
+    --rule: oklch(0.30 0.012 22);
+
+    /* Accent: same hue zone as light, lifted in lightness for AA contrast on
+     * the dark canvas, pushed to the sRGB gamut boundary in chroma so it
+     * still reads as brand-red rather than coral at the higher luminance. */
+    --accent: oklch(0.62 0.20 22);
+    --accent-soft: oklch(0.62 0.20 22 / 0.18);
+
+    /* Drop shadows on dark canvases read as smudges. Cards are defined by
+     * the hairline border + lifted surface only. */
+    --shadow: none;
+
+    --chart-grid: oklch(1 0 0 / 0.06);
+    --chart-tick: oklch(0.78 0.008 22);
+    --chart-ring: oklch(0.21 0.018 22);
+  }
 }
 
 * { box-sizing: border-box; }

@@ -15,22 +15,49 @@ const DATA_URL = new URLSearchParams(location.search).has("preview")
   ? "./turnout.json"
   : "https://votetally.kerryhatcher.com/turnout.json";
 
-const ACCENT = "#a32638";
-const ACCENT_SOFT = "rgba(163, 38, 56, 0.18)";
-const PALETTE = ["#a32638", "#3b82f6", "#0ea5a4", "#9333ea", "#f59e0b", "#475569"];
-
-const PARTY_COLOR = {
-  DEMOCRAT: "#3b82f6",
-  REPUBLICAN: "#a32638",
-  "NON-PARTISAN": "#475569",
-};
-
 const fmt = new Intl.NumberFormat("en-US");
 
 const ELECTION_NAME_OVERRIDE = {
   // Friendly names for known elections, since the source CSV only has the type.
   "A-12599": "May 19, 2026 General Primary",
 };
+
+// Read the active palette from CSS custom properties. Single source of truth
+// is styles.css; this function just observes it. Re-read on every chart build
+// so a theme switch (light ↔ dark) picks up the new tokens automatically.
+function theme() {
+  const cs = getComputedStyle(document.documentElement);
+  const get = (name, fallback) => (cs.getPropertyValue(name).trim() || fallback);
+  const accent = get("--accent", "#a32638");
+  return {
+    accent,
+    ink: get("--ink", "#1a1a1a"),
+    inkSoft: get("--ink-soft", "#555555"),
+    grid: get("--chart-grid", "rgba(0,0,0,0.05)"),
+    tick: get("--chart-tick", "#555555"),
+    ring: get("--chart-ring", "#ffffff"),
+    // Political colors are not theme tokens (Democrat-blue / Republican-red
+    // are signifiers that must read the same in both modes). Republican
+    // tracks --accent so it stays consistent with the brand on either canvas.
+    party: {
+      DEMOCRAT: "#3b82f6",
+      REPUBLICAN: accent,
+      "NON-PARTISAN": "#8a8888",
+    },
+    // Generic categorical palette for non-political breakdowns. Tuned so
+    // every entry has ≥3:1 against both light and dark canvases.
+    palette: [accent, "#3b82f6", "#0ea5a4", "#9333ea", "#f59e0b", "#8a8888"],
+  };
+}
+
+// Chart registry: hold instances so we can destroy + rebuild on theme change.
+const chartRegistry = new Map();
+
+function registerChart(canvasId, chart) {
+  const prev = chartRegistry.get(canvasId);
+  if (prev) prev.destroy();
+  chartRegistry.set(canvasId, chart);
+}
 
 function electionDisplay(election) {
   if (!election || !election.id) return "";
@@ -120,6 +147,7 @@ function renderDaily(data) {
   const ctx = document.getElementById("daily-chart");
   if (!ctx) return;
 
+  const t = theme();
   const hubDays = (data.hub && data.hub.by_day_party) || [];
   const fallbackDays = data.by_day || [];
 
@@ -132,7 +160,7 @@ function renderDaily(data) {
       "In-person early voting per day, broken down by primary ballot pulled. " +
       "Live from the GA SoS Election Data Hub.",
     );
-    new Chart(ctx, {
+    registerChart("daily-chart", new Chart(ctx, {
       type: "bar",
       data: {
         labels: hubDays.map((d) => formatDay(d.date)),
@@ -140,19 +168,19 @@ function renderDaily(data) {
           {
             label: "Democrat",
             data: hubDays.map((d) => d.democrat || 0),
-            backgroundColor: PARTY_COLOR.DEMOCRAT,
+            backgroundColor: t.party.DEMOCRAT,
             stack: "party",
           },
           {
             label: "Republican",
             data: hubDays.map((d) => d.republican || 0),
-            backgroundColor: PARTY_COLOR.REPUBLICAN,
+            backgroundColor: t.party.REPUBLICAN,
             stack: "party",
           },
           {
             label: "Non-Partisan",
             data: hubDays.map((d) => d.non_partisan || 0),
-            backgroundColor: PARTY_COLOR["NON-PARTISAN"],
+            backgroundColor: t.party["NON-PARTISAN"],
             stack: "party",
           },
         ],
@@ -162,7 +190,10 @@ function renderDaily(data) {
         maintainAspectRatio: false,
         animation: false,
         plugins: {
-          legend: { position: "bottom", labels: { boxWidth: 12, padding: 12 } },
+          legend: {
+            position: "bottom",
+            labels: { boxWidth: 12, padding: 12, color: t.inkSoft },
+          },
           tooltip: {
             callbacks: {
               label: (ctx) =>
@@ -178,17 +209,17 @@ function renderDaily(data) {
           x: {
             stacked: true,
             grid: { display: false },
-            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+            ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10, color: t.tick },
           },
           y: {
             stacked: true,
             beginAtZero: true,
-            ticks: { callback: (v) => fmt.format(v) },
-            grid: { color: "rgba(0,0,0,0.05)" },
+            ticks: { callback: (v) => fmt.format(v), color: t.tick },
+            grid: { color: t.grid },
           },
         },
       },
-    });
+    }));
     return;
   }
 
@@ -210,14 +241,14 @@ function renderDaily(data) {
     "earlier in the early-vote window.",
   );
 
-  new Chart(ctx, {
+  registerChart("daily-chart", new Chart(ctx, {
     type: "bar",
     data: {
       labels: fallbackDays.map((d) => formatDay(d.date)),
       datasets: [{
         label: "Voters added",
         data: fallbackDays.map((d) => d.voters_added),
-        backgroundColor: ACCENT,
+        backgroundColor: t.accent,
         borderRadius: 4,
         categoryPercentage: 0.85,
         barPercentage: 0.75,
@@ -238,16 +269,16 @@ function renderDaily(data) {
       scales: {
         y: {
           beginAtZero: true,
-          ticks: { callback: (v) => fmt.format(v) },
-          grid: { color: "rgba(0,0,0,0.05)" },
+          ticks: { callback: (v) => fmt.format(v), color: t.tick },
+          grid: { color: t.grid },
         },
         x: {
           grid: { display: false },
-          ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10 },
+          ticks: { maxRotation: 0, autoSkip: true, maxTicksLimit: 10, color: t.tick },
         },
       },
     },
-  });
+  }));
 }
 
 function buildPlaceholder({ total, label, note }) {
@@ -281,14 +312,18 @@ function renderBreakdown(canvasId, dict, colorFn) {
   const entries = Object.entries(dict || {}).sort((a, b) => b[1] - a[1]);
   if (!entries.length) return;
   const ctx = document.getElementById(canvasId);
-  new Chart(ctx, {
+  if (!ctx) return;
+  const t = theme();
+  registerChart(canvasId, new Chart(ctx, {
     type: "doughnut",
     data: {
       labels: entries.map(([k]) => k),
       datasets: [{
         data: entries.map(([, v]) => v),
-        backgroundColor: entries.map(([k], i) => colorFn ? colorFn(k, i) : PALETTE[i % PALETTE.length]),
-        borderColor: "#ffffff",
+        backgroundColor: entries.map(([k], i) => colorFn ? colorFn(k, i, t) : t.palette[i % t.palette.length]),
+        // Slice separator must equal the card surface in both themes, so
+        // slices read as "cut into the card" rather than "outlined in white."
+        borderColor: t.ring,
         borderWidth: 2,
       }],
     },
@@ -300,7 +335,7 @@ function renderBreakdown(canvasId, dict, colorFn) {
       plugins: {
         legend: {
           position: "bottom",
-          labels: { boxWidth: 12, boxHeight: 12, padding: 12 },
+          labels: { boxWidth: 12, boxHeight: 12, padding: 12, color: t.inkSoft },
         },
         tooltip: {
           callbacks: {
@@ -309,7 +344,25 @@ function renderBreakdown(canvasId, dict, colorFn) {
         },
       },
     },
-  });
+  }));
+}
+
+// Build all charts from a single cached data payload. Called once on initial
+// load and again on every OS theme change so the palette stays consistent
+// with the active CSS tokens.
+function renderAllCharts(data) {
+  const hasFile = data.current && data.current.total;
+  const hasHub = data.hub && data.hub.turnout;
+  if (!hasFile && !hasHub) return;
+  renderDaily(data);
+  if (hasHub && data.hub.by_race) {
+    renderBreakdown("race-chart", data.hub.by_race);
+  }
+  if (hasFile) {
+    renderBreakdown("style-chart", data.current.by_ballot_style);
+    renderBreakdown("party-chart", data.current.by_party,
+      (k, i, t) => t.party[k] || t.palette[i % t.palette.length]);
+  }
 }
 
 async function main() {
@@ -334,16 +387,25 @@ async function main() {
     document.getElementById("empty-state").classList.remove("hidden");
     return;
   }
-  renderHeadline(data);
-  renderDaily(data);
+
+  // Hub's race breakdown only renders if data is available; show the card
+  // before the chart binds so the layout is settled at first paint.
   if (hasHub && data.hub.by_race) {
     document.getElementById("race-card").hidden = false;
-    renderBreakdown("race-chart", data.hub.by_race);
   }
-  if (hasFile) {
-    renderBreakdown("style-chart", data.current.by_ballot_style);
-    renderBreakdown("party-chart", data.current.by_party,
-      (k, i) => PARTY_COLOR[k] || PALETTE[i % PALETTE.length]);
+
+  renderHeadline(data);
+  renderAllCharts(data);
+
+  // Live theme-switch repaint. Charts bake colors into canvas at construction,
+  // so on prefers-color-scheme change we destroy and rebuild from the cached
+  // data payload (no refetch). Headline DOM uses CSS vars and re-paints itself.
+  const mq = window.matchMedia("(prefers-color-scheme: dark)");
+  const onThemeChange = () => renderAllCharts(data);
+  if (mq.addEventListener) {
+    mq.addEventListener("change", onThemeChange);
+  } else if (mq.addListener) {
+    mq.addListener(onThemeChange);
   }
 }
 
