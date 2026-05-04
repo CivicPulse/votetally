@@ -69,6 +69,6 @@
     <!-- Tiny accent square as bullet -->
     <rect class="accent" x="0" y="-18" width="20" height="20" rx="3" />
     <text class="brand" x="36" y="-2">votetally</text>
-    <text class="footer" x="1040" y="-2" text-anchor="end">count.kerryhatcher.com</text>
+    <text class="footer" x="1040" y="-2" text-anchor="end">count.bibbunited.com</text>
   </g>
 </svg>

@@ -1,4 +1,4 @@
 User-agent: *
 Allow: /
 
-Sitemap: https://count.kerryhatcher.com/sitemap.xml
+Sitemap: https://count.bibbunited.com/sitemap.xml

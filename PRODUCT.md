@@ -1,6 +1,6 @@
 # VoteTally — Design Context
 
-A single-page live tracker of Bibb County, Georgia voter turnout for the active election cycle (currently the 2026 General Primary). Static site at `count.kerryhatcher.com`, fed by a local Python+Chrome scrape pipeline pushing JSON to Cloudflare R2.
+A single-page live tracker of Bibb County, Georgia voter turnout for the active election cycle (currently the 2026 General Primary). Static site at `count.bibbunited.com`, fed by a local Python+Chrome scrape pipeline pushing JSON to Cloudflare R2.
 
 **Register:** brand. The page IS the product — there is no app surface behind it. Design choices should be committed and identity-strong, not generic-product chrome.
 
@@ -24,7 +24,7 @@ Voice: plain, factual, locally-grounded. Names the county, names the source, nam
 
 ### Aesthetic Direction
 
-**Reference:** sister site to [bibbunited.com](https://www.bibbunited.com/) — same county, same dual-color civic identity (navy + crimson), same Barlow Condensed display + Source Serif body system, same light "Community" / dark "Urgent" mode pattern. count.kerryhatcher.com should read as a child of that family: editorial typography, big condensed numerals treated like a headline, authoritative because the typesetting treats the data like news. Numbers ARE the headline.
+**Reference:** sister site to [bibbunited.com](https://www.bibbunited.com/) — same county, same dual-color civic identity (navy + crimson), same Barlow Condensed display + Source Serif body system, same light "Community" / dark "Urgent" mode pattern. count.bibbunited.com should read as a child of that family: editorial typography, big condensed numerals treated like a headline, authoritative because the typesetting treats the data like news. Numbers ARE the headline.
 
 **Anti-references** (do not let the design drift into these):
 
