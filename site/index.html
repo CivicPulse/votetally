@@ -66,7 +66,7 @@
 
   <link rel="preconnect" href="https://cdn.jsdelivr.net" />
   <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.4/dist/chart.umd.min.js"></script>
-  <link rel="stylesheet" href="styles.css?v=5" />
+  <link rel="stylesheet" href="styles.css?v=7" />
 </head>
 <body>
   <header class="hero">
@@ -107,6 +107,12 @@
         <p class="caption">Which primary ballot the voter pulled.</p>
         <div class="chart-wrap small"><canvas id="party-chart"></canvas></div>
       </section>
+
+      <section class="card" id="turnout-card" hidden>
+        <h2>Turnout so far</h2>
+        <p class="caption" id="turnout-caption">Active voters who have cast a ballot in this primary.</p>
+        <div class="chart-wrap small"><canvas id="turnout-chart"></canvas></div>
+      </section>
     </div>
 
     <section class="card empty hidden" id="empty-state">
@@ -124,6 +130,6 @@
     </p>
   </footer>
 
-  <script src="app.js?v=6"></script>
+  <script src="app.js?v=7"></script>
 </body>
 </html>

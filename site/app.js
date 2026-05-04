@@ -36,6 +36,7 @@ function theme() {
     grid: get("--chart-grid", "rgba(0,0,0,0.05)"),
     tick: get("--chart-tick", "#555555"),
     ring: get("--chart-ring", "#ffffff"),
+    empty: get("--chart-empty", "rgba(0,0,0,0.06)"),
     // Political colors are not theme tokens (Democrat-blue / Republican-red
     // are signifiers that must read the same in both modes). Republican
     // tracks --accent so it stays consistent with the brand on either canvas.
@@ -439,6 +440,73 @@ function renderBreakdown(canvasId, dict, colorFn) {
   }));
 }
 
+// Two-slice pie of voted vs. not-yet-voted active voters. Pie (no cutout) is
+// the deliberate choice over a doughnut: the editorial point is that the red
+// slice is *small*, and a centered "X%" readout would replace seeing-the-slice
+// with reading-the-number. The pale --chart-empty fill for the remainder
+// reads as background capacity rather than competing data, which lets even an
+// 8° wedge land visually.
+function renderTurnout(data) {
+  const hub = data.hub || {};
+  const voted = hub.turnout;
+  const base = hub.active_voters;
+  if (typeof voted !== "number" || typeof base !== "number" || base <= 0) return;
+
+  const ctx = document.getElementById("turnout-chart");
+  if (!ctx) return;
+  const t = theme();
+  const remaining = Math.max(0, base - voted);
+  const pct = typeof hub.turnout_pct === "number"
+    ? hub.turnout_pct
+    : Math.round((voted / base) * 1000) / 10;
+
+  describeCanvas(
+    "turnout-chart",
+    `Pie chart of turnout: ${pct}% of ${fmt.format(base)} active voters ` +
+    `have cast a ballot.`,
+    `Voted: ${fmt.format(voted)} (${pct}%). ` +
+    `Not yet voted: ${fmt.format(remaining)} (${(100 - pct).toFixed(1)}%).`,
+  );
+
+  const captionEl = document.getElementById("turnout-caption");
+  if (captionEl) {
+    captionEl.textContent =
+      `${fmt.format(voted)} of ${fmt.format(base)} active voters · ${pct}% turnout.`;
+  }
+
+  registerChart("turnout-chart", new Chart(ctx, {
+    type: "pie",
+    data: {
+      labels: ["Voted", "Not yet voted"],
+      datasets: [{
+        data: [voted, remaining],
+        backgroundColor: [t.accent, t.empty],
+        borderColor: t.ring,
+        borderWidth: 2,
+      }],
+    },
+    options: {
+      responsive: true,
+      maintainAspectRatio: false,
+      animation: false,
+      plugins: {
+        legend: {
+          position: "bottom",
+          labels: { boxWidth: 12, boxHeight: 12, padding: 12, color: t.inkSoft },
+        },
+        tooltip: {
+          callbacks: {
+            label: (ctx) => {
+              const slicePct = (ctx.parsed / base * 100).toFixed(1);
+              return `${ctx.label}: ${fmt.format(ctx.parsed)} (${slicePct}%)`;
+            },
+          },
+        },
+      },
+    },
+  }));
+}
+
 // Build all charts from a single cached data payload. Called once on initial
 // load and again on every OS theme change so the palette stays consistent
 // with the active CSS tokens.
@@ -455,6 +523,7 @@ function renderAllCharts(data) {
     renderBreakdown("party-chart", data.current.by_party,
       (k, i, t) => t.party[k] || t.palette[i % t.palette.length]);
   }
+  renderTurnout(data);
 }
 
 async function main() {
@@ -492,6 +561,9 @@ async function main() {
   // before the chart binds so the layout is settled at first paint.
   if (hasHub && data.hub.by_race) {
     document.getElementById("race-card").hidden = false;
+  }
+  if (hasHub && typeof data.hub.active_voters === "number") {
+    document.getElementById("turnout-card").hidden = false;
   }
 
   renderHeadline(data);

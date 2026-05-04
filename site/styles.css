@@ -20,6 +20,9 @@
   --chart-grid: rgba(0, 0, 0, 0.05);
   --chart-tick: #555555;
   --chart-ring: #ffffff;
+  /* "Remaining capacity" fill for meter-style charts (turnout pie). Tuned
+   * to read as background, not data, so a tiny accent slice lands visually. */
+  --chart-empty: rgba(0, 0, 0, 0.06);
 }
 
 @media (prefers-color-scheme: dark) {
@@ -47,6 +50,7 @@
     --chart-grid: oklch(1 0 0 / 0.06);
     --chart-tick: oklch(0.78 0.008 22);
     --chart-ring: oklch(0.21 0.018 22);
+    --chart-empty: oklch(1 0 0 / 0.05);
   }
 }
 
