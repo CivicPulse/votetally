@@ -1,6 +1,6 @@
 # VoteTally
 
-A single-page live tracker of Bibb County, Georgia voter turnout for the active election cycle. Static site at `count.bibbunited.com`, fed by a local Python+Chrome scrape pipeline pushing JSON to Cloudflare R2.
+A single-page live tracker of Bibb County, Georgia voter turnout for the active election cycle. Static site at `count.kerryhatcher.com`, fed by a local Python+Chrome scrape pipeline pushing JSON to Cloudflare R2.
 
 See `README.md` for architecture and pipeline details. The full design brief lives in `.impeccable.md`; the section below is the design contract every Claude session in this repo should honor.
 

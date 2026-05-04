@@ -13,7 +13,7 @@
 // hand-built site/turnout.json (gitignored) for design-time testing.
 const DATA_URL = new URLSearchParams(location.search).has("preview")
   ? "./turnout.json"
-  : "https://votetally.bibbunited.com/turnout.json";
+  : "https://votetally.kerryhatcher.com/turnout.json";
 
 const fmt = new Intl.NumberFormat("en-US");
 
