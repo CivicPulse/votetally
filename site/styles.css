@@ -25,8 +25,12 @@
   --chart-empty: rgba(0, 0, 0, 0.06);
 }
 
+/* Dark tokens apply when (a) the OS prefers dark AND no override is set, OR
+ * (b) the URL forces it via ?theme=dark. The :not([data-theme]) gate on the
+ * media query is what lets ?theme=light win on a dark-OS machine — without
+ * it the media block would clobber the light tokens. */
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme]) {
     /* All neutrals on a single warm ramp at hue 22°, low chroma, varying
      * lightness. This is what makes dark mode read as "the same paper at a
      * different hour" instead of "an inverted theme." */
@@ -52,6 +56,22 @@
     --chart-ring: oklch(0.21 0.018 22);
     --chart-empty: oklch(1 0 0 / 0.05);
   }
+}
+
+:root[data-theme="dark"] {
+  --bg: oklch(0.18 0.02 22);
+  --surface: oklch(0.21 0.018 22);
+  --ink: oklch(0.95 0.005 22);
+  --ink-soft: oklch(0.78 0.008 22);
+  --ink-muted: oklch(0.62 0.012 22);
+  --rule: oklch(0.30 0.012 22);
+  --accent: oklch(0.62 0.20 22);
+  --accent-soft: oklch(0.62 0.20 22 / 0.18);
+  --shadow: none;
+  --chart-grid: oklch(1 0 0 / 0.06);
+  --chart-tick: oklch(0.78 0.008 22);
+  --chart-ring: oklch(0.21 0.018 22);
+  --chart-empty: oklch(1 0 0 / 0.05);
 }
 
 * { box-sizing: border-box; }
