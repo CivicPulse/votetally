@@ -544,6 +544,17 @@ function renderTurnout(data) {
 // Build all charts from a single cached data payload. Called once on initial
 // load and again on every OS theme change so the palette stays consistent
 // with the active CSS tokens.
+// Hub party data is comprehensive (early in-person + absentee + electronic,
+// summed by party) and refreshes hourly. The voter-history zip's by_party
+// is the same shape but lags by a day or more. Prefer hub when present.
+function pickPartyData(data) {
+  const hubParty = data.hub && data.hub.by_party;
+  if (hubParty && Object.keys(hubParty).length) return hubParty;
+  const fileParty = data.current && data.current.by_party;
+  if (fileParty && Object.keys(fileParty).length) return fileParty;
+  return null;
+}
+
 function renderAllCharts(data) {
   const hasFile = data.current && data.current.total;
   const hasHub = data.hub && data.hub.turnout;
@@ -554,7 +565,10 @@ function renderAllCharts(data) {
   }
   if (hasFile) {
     renderBreakdown("style-chart", data.current.by_ballot_style);
-    renderBreakdown("party-chart", data.current.by_party,
+  }
+  const partyData = pickPartyData(data);
+  if (partyData) {
+    renderBreakdown("party-chart", partyData,
       (k, i, t) => t.party[k] || t.palette[i % t.palette.length]);
   }
   renderTurnout(data);
@@ -605,7 +619,7 @@ async function main() {
   if (hasFile && data.current.by_ballot_style) {
     document.getElementById("style-card").hidden = false;
   }
-  if (hasFile && data.current.by_party) {
+  if (pickPartyData(data)) {
     document.getElementById("party-card").hidden = false;
   }
 

@@ -52,6 +52,12 @@ class HubSnapshot:
     active_voters: int | None = None
     turnout_pct: float | None = None
     by_race: dict[str, int] = field(default_factory=dict)
+    # Party rollup scraped from the Total Turnout sheet's "Party" demographic
+    # tab (sibling of Race/Ethnicity). Keys: "DEMOCRAT", "REPUBLICAN",
+    # "NON-PARTISAN" (whatever the dashboard renders). Lets the frontend
+    # show a party breakdown without waiting on the slower voter-history
+    # zip pipeline.
+    by_party: dict[str, int] = field(default_factory=dict)
     # Per-day per-party early-voting totals scraped from the Early Voting
     # (In Person) → "by Party and Date" Qlik sub-tab. Each entry has
     # keys: date (YYYY-MM-DD), democrat, republican, non_partisan, total.
@@ -67,6 +73,7 @@ class HubSnapshot:
             "active_voters": self.active_voters,
             "turnout_pct": self.turnout_pct,
             "by_race": self.by_race,
+            "by_party": self.by_party,
             "by_day_party": self.by_day_party,
         }
 
@@ -465,6 +472,54 @@ def _parse_by_day_party(text: str) -> list[dict]:
     return out
 
 
+def _parse_demographic_bars(text: str, label_re: str) -> dict[str, int]:
+    """Parse the Total Turnout sheet's currently-active demographic bar chart.
+
+    The demographic tab container ("Party / Race/Ethnicity / Gender / Age
+    Group") shows ONE chart at a time. The active chart's labels and bar
+    values appear between the literal "Bar chart" marker and the
+    "*Data as of" footer. Same slicing trick used by `_parse_by_day_party`.
+
+    `label_re` should match labels for the active tab — race names when
+    Race/Ethnicity is active, party names when Party is active. Returns
+    label → bar value, or {} if the shape doesn't match.
+    """
+    chart_start = text.find("Bar chart")
+    if chart_start < 0:
+        return {}
+    chart_end = text.find("*Data as of", chart_start)
+    if chart_end < 0:
+        chart_end = len(text)
+    section = text[chart_start:chart_end]
+
+    label_matches = list(re.finditer(label_re, section, flags=re.MULTILINE))
+    if not label_matches:
+        return {}
+    labels = [m.group(1) for m in label_matches]
+    last_label_end = max(m.end() for m in label_matches)
+    nums_slice = section[last_label_end:]
+    nums = re.findall(r"\b(\d[\d,]*)\b", nums_slice)
+    if len(nums) < len(labels):
+        return {}
+    out: dict[str, int] = {}
+    for label, raw in zip(labels, nums[-len(labels):], strict=False):
+        with suppress(ValueError):
+            out[label] = _parse_int(raw)
+    return out
+
+
+# Tab labels appear repeatedly in the demographic-bar slice (DEMOCRAT
+# shows up in the by_day_party chart's per-day labels too, but that's
+# on a different sheet entirely). Strip the line-anchor when matching
+# inside the Total Turnout demographic section because the chart labels
+# don't always sit on their own line.
+_PARTY_LABEL_RE = r"\b(DEMOCRAT|REPUBLICAN|NON[\s\-]?PARTISAN|NONPARTISAN)\b"
+_RACE_LABEL_RE = (
+    r"^(White|Black|Other/Unknown|Hispanic/Latino"
+    r"|Asian/Pacific Islander|American Indian or Alaska\S*)$"
+)
+
+
 def _parse_snapshot(text: str) -> HubSnapshot:
     """Pull KPIs out of the analysis frame's visible text.
 
@@ -496,29 +551,12 @@ def _parse_snapshot(text: str) -> HubSnapshot:
         with suppress(ValueError):
             snap.turnout_pct = float(m.group(1).rstrip("%"))
 
-    # Race/ethnicity bar chart text layout:
-    #   Bar chart \n No title \n {labels...} \n {axis values...} \n 0 \n {bar values...}
-    # Take the slice AFTER the last race label and BEFORE "*Data as of",
-    # then assume the trailing N numbers are the bar values (axis values
-    # come first in that slice; bars come last).
-    race_pattern = (
-        r"^(White|Black|Other/Unknown|Hispanic/Latino"
-        r"|Asian/Pacific Islander|American Indian or Alaska\S*)$"
-    )
-    race_labels = re.findall(race_pattern, text, flags=re.MULTILINE)
-    if race_labels:
-        last_label_end = max(
-            m.end() for m in re.finditer(race_pattern, text, flags=re.MULTILINE)
-        )
-        end_marker = text.find("*Data as of", last_label_end)
-        slice_ = text[last_label_end:end_marker if end_marker > 0 else None]
-        nums = re.findall(r"\b(\d[\d,]*)\b", slice_)
-        if len(nums) >= len(race_labels):
-            for label, raw in zip(
-                race_labels, nums[-len(race_labels):], strict=False,
-            ):
-                with suppress(ValueError):
-                    snap.by_race[label] = _parse_int(raw)
+    # Race/ethnicity bar chart — only valid when the demographic tab is
+    # active on Race/Ethnicity. `fetch_hub_snapshot` pins it before this
+    # parser runs. If Party (or Gender / Age Group) is active instead,
+    # the slice has different labels and `_parse_demographic_bars` returns
+    # {} cleanly rather than mis-binding race names to party numbers.
+    snap.by_race = _parse_demographic_bars(text, _RACE_LABEL_RE)
 
     # Data freshness timestamp.
     m = re.search(r"Data as of\s*:\s*([\d/]+\s+[\d:]+\s*(?:AM|PM)?)", text, re.IGNORECASE)
@@ -691,24 +729,48 @@ def fetch_hub_snapshot(
                         "to scrape statewide data under a county key."
                     )
 
-            # Pin the demographics tab to Race/Ethnicity. The container
-            # remembers whichever tab the prior session left active, so
-            # without an explicit click we sometimes capture Party / Gender /
-            # Age and by_race silently parses to {}. Side-by-side dumps on
-            # 2026-05-04 confirmed: 09:30 run had Race active, 10:48 had
-            # Party active — same scraper, same parser, different text.
+            # Pin the demographics tab to Race/Ethnicity for the headline
+            # KPI + race scrape. The container remembers whichever tab the
+            # prior session left active, so without an explicit click we
+            # sometimes captured Party / Gender / Age and by_race silently
+            # parsed to {}. Side-by-side dumps on 2026-05-04 confirmed:
+            # 09:30 run had Race active, 10:48 had Party active — same
+            # scraper, same parser, different text.
             _select_chart_sub_tab(qlik_frame, "Race/Ethnicity")
-
-            text = qlik_frame.evaluate("() => document.body.innerText")
-            snap = _parse_snapshot(text)
+            text_race = qlik_frame.evaluate("() => document.body.innerText")
+            snap = _parse_snapshot(text_race)
             snap.county = applied_county  # None only when caller passed county=""
 
             if diag_dir:
                 diag_dir.mkdir(parents=True, exist_ok=True)
                 stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
                 page.screenshot(path=str(diag_dir / f"hub-{stamp}.png"), full_page=True)
-                (diag_dir / f"hub-{stamp}.txt").write_text(text, encoding="utf-8")
+                (diag_dir / f"hub-{stamp}.txt").write_text(text_race, encoding="utf-8")
                 log.info("diagnostics saved → %s/hub-%s.{png,txt}", diag_dir, stamp)
+
+            # Phase-1 of moving party data off the (slow, manual) voter-history
+            # zip onto the live hub feed: switch the demographic tab to
+            # "Party", re-extract innerText, parse the same bar-chart shape
+            # with party labels. Best-effort — if the click or parse fails,
+            # by_party stays {} and the frontend falls back to the zip data
+            # (where present) or hides the card.
+            if _select_chart_sub_tab(qlik_frame, "Party"):
+                text_party = qlik_frame.evaluate("() => document.body.innerText")
+                snap.by_party = _parse_demographic_bars(text_party, _PARTY_LABEL_RE)
+                log.info("captured by_party: %s", snap.by_party)
+                if diag_dir:
+                    stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+                    page.screenshot(
+                        path=str(diag_dir / f"hub-party-{stamp}.png"),
+                        full_page=True,
+                    )
+                    (diag_dir / f"hub-party-{stamp}.txt").write_text(
+                        text_party, encoding="utf-8",
+                    )
+            else:
+                log.warning(
+                    "Party demographic tab not clickable; by_party will be empty"
+                )
 
             # Second pass: switch to the Early Voting (In Person) sheet and
             # scrape the per-day-per-party breakdown. Selections persist on
