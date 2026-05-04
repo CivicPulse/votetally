@@ -691,6 +691,14 @@ def fetch_hub_snapshot(
                         "to scrape statewide data under a county key."
                     )
 
+            # Pin the demographics tab to Race/Ethnicity. The container
+            # remembers whichever tab the prior session left active, so
+            # without an explicit click we sometimes capture Party / Gender /
+            # Age and by_race silently parses to {}. Side-by-side dumps on
+            # 2026-05-04 confirmed: 09:30 run had Race active, 10:48 had
+            # Party active — same scraper, same parser, different text.
+            _select_chart_sub_tab(qlik_frame, "Race/Ethnicity")
+
             text = qlik_frame.evaluate("() => document.body.innerText")
             snap = _parse_snapshot(text)
             snap.county = applied_county  # None only when caller passed county=""
