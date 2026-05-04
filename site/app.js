@@ -59,6 +59,26 @@ function registerChart(canvasId, chart) {
   chartRegistry.set(canvasId, chart);
 }
 
+// Canvas content is invisible to assistive tech. Promote each chart to an
+// accessible image with a one-line summary and a sibling sr-only paragraph
+// containing the full series. Promotes the canvas to role=img so SR users
+// hear the summary instead of "graphic".
+function describeCanvas(canvasId, summary, fullText) {
+  const ctx = document.getElementById(canvasId);
+  if (!ctx) return;
+  ctx.setAttribute("role", "img");
+  ctx.setAttribute("aria-label", summary);
+  const wrap = ctx.parentElement;
+  if (!wrap) return;
+  let sr = wrap.querySelector(":scope > .visually-hidden");
+  if (!sr) {
+    sr = document.createElement("p");
+    sr.className = "visually-hidden";
+    wrap.appendChild(sr);
+  }
+  sr.textContent = fullText || summary;
+}
+
 function electionDisplay(election) {
   if (!election || !election.id) return "";
   return ELECTION_NAME_OVERRIDE[election.id] ||
@@ -68,10 +88,33 @@ function electionDisplay(election) {
 function formatTimestamp(iso) {
   if (!iso) return "";
   const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
   return d.toLocaleString(undefined, {
     weekday: "short", month: "short", day: "numeric",
     hour: "numeric", minute: "2-digit", timeZoneName: "short",
   });
+}
+
+// Cron runs 4×/day (09:30/15:30/19:30/21:30 EDT). Worst expected gap is the
+// overnight ~12h window. Past ~14h we're outside the schedule (italic dek);
+// past ~24h is almost certainly a cron failure (also desaturate the headline).
+function freshnessState(iso) {
+  if (!iso) return "unknown";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "unknown";
+  const ageHours = (Date.now() - d.getTime()) / 3_600_000;
+  if (ageHours > 24) return "stale";
+  if (ageHours > 14) return "overnight";
+  return "fresh";
+}
+
+function relativeAge(iso) {
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  const ageHours = (Date.now() - d.getTime()) / 3_600_000;
+  if (ageHours < 1) return "just now";
+  if (ageHours < 24) return `${Math.round(ageHours)}h ago`;
+  return `${Math.round(ageHours / 24)}d ago`;
 }
 
 function renderHeadline(data) {
@@ -89,7 +132,9 @@ function renderHeadline(data) {
 
   document.getElementById("kicker").textContent =
     `Bibb County · ${electionDisplay(election)}`;
-  document.getElementById("total").textContent = fmt.format(headlineTotal);
+
+  const totalEl = document.getElementById("total");
+  totalEl.textContent = fmt.format(headlineTotal);
 
   // Fold turnout rate + active voter base into the subtitle when the hub
   // captured them. Editorial dek pattern, not a KPI tile — keeps the headline
@@ -99,12 +144,28 @@ function renderHeadline(data) {
       `ballots cast · ${hub.turnout_pct}% of ${fmt.format(hub.active_voters)} active voters`;
   }
 
-  document.getElementById("updated").textContent =
-    headlineFreshness
-      ? (hub.data_as_of
-          ? `As of ${hub.data_as_of}`
-          : `Updated ${formatTimestamp(headlineFreshness)}`)
-      : "";
+  // Staleness tiering uses data.updated_at (the JSON regen heartbeat) — that
+  // tracks the cron itself rather than the upstream "as of" string, which is
+  // pre-formatted by the scraper and not always parseable.
+  const heartbeat = data.updated_at || cur.scraped_at;
+  const state = freshnessState(heartbeat);
+  const updatedEl = document.getElementById("updated");
+
+  totalEl.classList.toggle("is-stale", state === "stale");
+  updatedEl.classList.toggle("is-overnight", state === "overnight");
+  updatedEl.classList.toggle("is-stale", state === "stale");
+
+  if (state === "stale") {
+    updatedEl.textContent = `Last updated ${relativeAge(heartbeat)}. Refresh may be delayed.`;
+  } else if (state === "overnight") {
+    updatedEl.textContent = `Last updated ${relativeAge(heartbeat)}`;
+  } else if (headlineFreshness) {
+    updatedEl.textContent = hub.data_as_of
+      ? `As of ${hub.data_as_of}`
+      : `Updated ${formatTimestamp(headlineFreshness)}`;
+  } else {
+    updatedEl.textContent = "";
+  }
 
   // Show the source so the freshness gap between hub and file is honest.
   const sourceLine = document.getElementById("source-line");
@@ -159,6 +220,20 @@ function renderDaily(data) {
     setDailyCaption(
       "In-person early voting per day, broken down by primary ballot pulled. " +
       "Live from the GA SoS Election Data Hub.",
+    );
+    const totals = hubDays.map((d) =>
+      (d.democrat || 0) + (d.republican || 0) + (d.non_partisan || 0));
+    const peakIdx = totals.indexOf(Math.max(...totals));
+    describeCanvas(
+      "daily-chart",
+      `Bar chart of in-person early voting per day across ${hubDays.length} days, ` +
+      `stacked by primary ballot. Highest day: ${formatDay(hubDays[peakIdx].date)} ` +
+      `with ${fmt.format(totals[peakIdx])} voters.`,
+      hubDays.map((d) =>
+        `${formatDay(d.date)}: Democrat ${fmt.format(d.democrat || 0)}, ` +
+        `Republican ${fmt.format(d.republican || 0)}, ` +
+        `Non-partisan ${fmt.format(d.non_partisan || 0)}.`,
+      ).join(" "),
     );
     registerChart("daily-chart", new Chart(ctx, {
       type: "bar",
@@ -241,6 +316,13 @@ function renderDaily(data) {
     "earlier in the early-vote window.",
   );
 
+  describeCanvas(
+    "daily-chart",
+    `Bar chart of voters added between snapshots across ${fallbackDays.length} days.`,
+    fallbackDays.map((d) =>
+      `${formatDay(d.date)}: ${fmt.format(d.voters_added)} added.`,
+    ).join(" "),
+  );
   registerChart("daily-chart", new Chart(ctx, {
     type: "bar",
     data: {
@@ -314,6 +396,16 @@ function renderBreakdown(canvasId, dict, colorFn) {
   const ctx = document.getElementById(canvasId);
   if (!ctx) return;
   const t = theme();
+  const total = entries.reduce((s, [, v]) => s + v, 0);
+  describeCanvas(
+    canvasId,
+    `Donut chart with ${entries.length} segments. ` +
+    `Largest: ${entries[0][0]} at ${fmt.format(entries[0][1])}.`,
+    entries.map(([k, v]) => {
+      const pct = total ? Math.round((v / total) * 100) : 0;
+      return `${k}: ${fmt.format(v)} (${pct}%).`;
+    }).join(" "),
+  );
   registerChart(canvasId, new Chart(ctx, {
     type: "doughnut",
     data: {
@@ -367,17 +459,25 @@ function renderAllCharts(data) {
 
 async function main() {
   let data;
+  // 8s ceiling — R2 typically replies in <300ms; anything past 8s on a mobile
+  // link is a dead-end and should fail loudly rather than hang on "loading…"
+  const controller = new AbortController();
+  const timeoutId = setTimeout(() => controller.abort(), 8000);
   try {
-    const resp = await fetch(DATA_URL, { cache: "no-cache" });
+    const resp = await fetch(DATA_URL, { cache: "no-cache", signal: controller.signal });
     if (!resp.ok) throw new Error(`HTTP ${resp.status}`);
     data = await resp.json();
   } catch (e) {
+    const aborted = e && e.name === "AbortError";
     document.getElementById("empty-state").classList.remove("hidden");
     document.getElementById("kicker").textContent = "Bibb County";
     document.getElementById("total").textContent = "—";
-    document.getElementById("subtitle").textContent = "data not available";
+    document.getElementById("subtitle").textContent =
+      aborted ? "couldn't reach the data feed" : "data not available";
     console.error("turnout fetch failed:", e);
     return;
+  } finally {
+    clearTimeout(timeoutId);
   }
   // Empty only if BOTH sources lack data; hub may be present before the
   // first file scrape, or vice versa.
