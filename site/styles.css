@@ -169,13 +169,8 @@ h3, h4 {
   font-variant-numeric: tabular-nums;
 }
 
-.updated {
-  color: var(--ink-muted);
-}
-
-.meta.source {
-  margin-top: 0.5rem;
-  font-size: 0.8rem;
+.updated,
+#last-checked {
   color: var(--ink-muted);
 }
 
@@ -286,14 +281,16 @@ footer {
 
 .hidden { display: none; }
 
-/* Staleness signal. Tier 1 (overnight, >14h since cron heartbeat): the
+/* Staleness signal. Tier 1 (overnight, >12h since cron heartbeat): the
  * "updated" line italicizes + drops to muted tone — sober, unobtrusive,
  * matches an expected nightly gap. Tier 2 (>24h, almost certainly a cron
  * failure): the headline numeral itself desaturates from accent red to
  * --ink-soft, withdrawing the brand's "live" signal until the page can
  * re-confirm. Both tiers compose so a stale page reads stale at every scale. */
 .updated.is-overnight,
-.updated.is-stale {
+.updated.is-stale,
+#last-checked.is-overnight,
+#last-checked.is-stale {
   font-style: italic;
   color: var(--ink-muted);
 }

@@ -12,7 +12,14 @@ from pathlib import Path
 from votetally.aggregator import Snapshot, aggregate_county
 from votetally.parser import election_id_from_zip_name, parse_voter_zip
 from votetally.r2 import R2Client, R2Config
-from votetally.store import HubData, Turnout, is_duplicate_scrape, merge_hub, merge_snapshot
+from votetally.store import (
+    HubData,
+    Turnout,
+    empty_turnout,
+    is_duplicate_scrape,
+    merge_hub,
+    merge_snapshot,
+)
 
 log = logging.getLogger(__name__)
 
@@ -84,9 +91,17 @@ def process_hub_and_upload(
     # at different times still dedups.
     prev_hub.pop("scraped_at", None)
     new_hub.pop("scraped_at", None)
+    scraped_at = hub_data.get("scraped_at", "")
+
     if prev_hub == new_hub:
-        log.info("hub payload unchanged from previous; skipping R2 write")
-        return prev, False
+        # No source change. Still write so last_checked_at advances — the
+        # frontend uses it as a liveness pulse, distinct from updated_at
+        # (which only moves when the data itself changed).
+        log.info("hub payload unchanged from previous; refreshing last_checked_at only")
+        updated: Turnout = dict(prev) if prev else empty_turnout()  # type: ignore[assignment]
+        updated["last_checked_at"] = scraped_at
+        r2.put_turnout(updated)
+        return updated, False
 
     updated = merge_hub(prev, hub_data)
     r2.put_turnout(updated)

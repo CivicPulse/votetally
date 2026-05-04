@@ -85,14 +85,15 @@ class Turnout(TypedDict, total=False):
     snapshots: list[HistoryEntry]
     by_day: list[DayCount]
     hub: HubData
-    updated_at: str
+    updated_at: str       # ISO UTC of last run that actually changed data
+    last_checked_at: str  # ISO UTC of most recent run, change or not
 
 
 def empty_turnout() -> Turnout:
     """Initial state when turnout.json doesn't yet exist in R2."""
     return Turnout(
         election={}, county="", current={}, snapshots=[], by_day=[],
-        hub={}, updated_at="",
+        hub={}, updated_at="", last_checked_at="",
     )
 
 
@@ -170,6 +171,7 @@ def merge_snapshot(prev: Turnout | None, new: Snapshot) -> Turnout:
         by_day=compute_by_day(snapshots),
         hub=prev.get("hub", {}),  # preserve hub data on file-snapshot merges
         updated_at=new["scraped_at"],
+        last_checked_at=new["scraped_at"],
     )
 
 
@@ -190,6 +192,7 @@ def merge_hub(prev: Turnout | None, hub: HubData) -> Turnout:
         by_day=prev.get("by_day", []),
         hub=hub,
         updated_at=hub.get("scraped_at", prev.get("updated_at", "")),
+        last_checked_at=hub.get("scraped_at", prev.get("last_checked_at", "")),
     )
 
 

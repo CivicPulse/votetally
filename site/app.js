@@ -96,26 +96,36 @@ function formatTimestamp(iso) {
   });
 }
 
-// Cron runs 4×/day (09:30/15:30/19:30/21:30 EDT). Worst expected gap is the
-// overnight ~12h window. Past ~14h we're outside the schedule (italic dek);
-// past ~24h is almost certainly a cron failure (also desaturate the headline).
+// Cron runs hourly :40 from 07:00–22:00 ET (16/day). Worst expected gap is
+// the 22:40→07:40 overnight ~9h window. Past ~12h we're outside the schedule
+// (italic dek); past ~24h is almost certainly a cron failure (also
+// desaturate the headline).
 function freshnessState(iso) {
   if (!iso) return "unknown";
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "unknown";
   const ageHours = (Date.now() - d.getTime()) / 3_600_000;
   if (ageHours > 24) return "stale";
-  if (ageHours > 14) return "overnight";
+  if (ageHours > 12) return "overnight";
   return "fresh";
 }
 
 function relativeAge(iso) {
   const d = new Date(iso);
   if (Number.isNaN(d.getTime())) return "";
-  const ageHours = (Date.now() - d.getTime()) / 3_600_000;
-  if (ageHours < 1) return "just now";
+  const ageMin = (Date.now() - d.getTime()) / 60_000;
+  if (ageMin < 1) return "just now";
+  if (ageMin < 60) return `${Math.round(ageMin)} min ago`;
+  const ageHours = ageMin / 60;
   if (ageHours < 24) return `${Math.round(ageHours)}h ago`;
   return `${Math.round(ageHours / 24)}d ago`;
+}
+
+function formatClockTime(iso) {
+  if (!iso) return "";
+  const d = new Date(iso);
+  if (Number.isNaN(d.getTime())) return "";
+  return d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
 }
 
 function renderHeadline(data) {
@@ -145,21 +155,23 @@ function renderHeadline(data) {
       `ballots cast · ${hub.turnout_pct}% of ${fmt.format(hub.active_voters)} active voters`;
   }
 
-  // Staleness tiering uses data.updated_at (the JSON regen heartbeat) — that
-  // tracks the cron itself rather than the upstream "as of" string, which is
-  // pre-formatted by the scraper and not always parseable.
-  const heartbeat = data.updated_at || cur.scraped_at;
+  // Staleness tiering uses data.last_checked_at — the genuine cron heartbeat,
+  // refreshed every run regardless of whether data changed. updated_at only
+  // moves on actual data changes, so it would falsely read "stale" during
+  // quiet hours when the cron is fine but turnout isn't ticking.
+  const heartbeat = data.last_checked_at || data.updated_at || cur.scraped_at;
   const state = freshnessState(heartbeat);
   const updatedEl = document.getElementById("updated");
+  const lastCheckedEl = document.getElementById("last-checked");
 
   totalEl.classList.toggle("is-stale", state === "stale");
   updatedEl.classList.toggle("is-overnight", state === "overnight");
   updatedEl.classList.toggle("is-stale", state === "stale");
+  lastCheckedEl.classList.toggle("is-overnight", state === "overnight");
+  lastCheckedEl.classList.toggle("is-stale", state === "stale");
 
   if (state === "stale") {
     updatedEl.textContent = `Last updated ${relativeAge(heartbeat)}. Refresh may be delayed.`;
-  } else if (state === "overnight") {
-    updatedEl.textContent = `Last updated ${relativeAge(heartbeat)}`;
   } else if (headlineFreshness) {
     updatedEl.textContent = hub.data_as_of
       ? `As of ${hub.data_as_of}`
@@ -168,15 +180,14 @@ function renderHeadline(data) {
     updatedEl.textContent = "";
   }
 
-  // Show the source so the freshness gap between hub and file is honest.
-  const sourceLine = document.getElementById("source-line");
-  if (hub.turnout) {
-    const fileTotal = cur.total || 0;
-    sourceLine.textContent = fileTotal && fileTotal !== hub.turnout
-      ? `Source: GA SoS Election Data Hub · file lags at ${fmt.format(fileTotal)}`
-      : `Source: GA SoS Election Data Hub`;
-  } else if (cur.total) {
-    sourceLine.textContent = `Source: GA SoS voter participation history file`;
+  // Secondary line: when the cron last ran. Distinct from the "as of" line —
+  // the source's clock vs. our clock. Suppress in stale state because the
+  // primary line is already an alarm.
+  if (state !== "stale" && data.last_checked_at) {
+    lastCheckedEl.textContent =
+      `Last checked ${formatClockTime(data.last_checked_at)} (${relativeAge(data.last_checked_at)})`;
+  } else {
+    lastCheckedEl.textContent = "";
   }
 
   const snapshots = data.snapshots || [];
