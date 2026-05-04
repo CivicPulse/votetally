@@ -184,15 +184,20 @@ def merge_hub(prev: Turnout | None, hub: HubData) -> Turnout:
     """
     if prev is None or not prev.get("current"):
         prev = empty_turnout()
+    # `prev.get("county")` returns "" (not absent) on a freshly empty_turnout(),
+    # so the second arg to .get() never fires. Use `or` to fall through to the
+    # hub's county on the first scrape for a new county. Without this, a brand
+    # new county's turnout JSON ships with county="" until a file-based snapshot
+    # eventually overwrites it via merge_snapshot.
     return Turnout(
-        election=prev.get("election", {}),
-        county=prev.get("county", hub.get("county", "")),
-        current=prev.get("current", {}),  # type: ignore[typeddict-item]
-        snapshots=prev.get("snapshots", []),
-        by_day=prev.get("by_day", []),
+        election=prev.get("election") or {},
+        county=prev.get("county") or hub.get("county", ""),
+        current=prev.get("current") or {},  # type: ignore[typeddict-item]
+        snapshots=prev.get("snapshots") or [],
+        by_day=prev.get("by_day") or [],
         hub=hub,
-        updated_at=hub.get("scraped_at", prev.get("updated_at", "")),
-        last_checked_at=hub.get("scraped_at", prev.get("last_checked_at", "")),
+        updated_at=hub.get("scraped_at") or prev.get("updated_at", ""),
+        last_checked_at=hub.get("scraped_at") or prev.get("last_checked_at", ""),
     )
 
 

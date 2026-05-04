@@ -159,8 +159,13 @@ function renderHeadline(data) {
     : (cur.total || 0);
   const headlineFreshness = hub.data_as_of || cur.scraped_at;
 
+  // Drop the dot+space separator when there's no election to display —
+  // happens for counties whose voter-history zip hasn't been ingested yet
+  // (hub data alone has no election.id). "Crawford County · " with a
+  // trailing dangle reads as broken; "Crawford County" reads as fine.
+  const electionLabel = electionDisplay(election);
   document.getElementById("kicker").textContent =
-    `${COUNTY_LABEL} · ${electionDisplay(election)}`;
+    electionLabel ? `${COUNTY_LABEL} · ${electionLabel}` : COUNTY_LABEL;
 
   const totalEl = document.getElementById("total");
   totalEl.textContent = fmt.format(headlineTotal);
@@ -586,13 +591,22 @@ async function main() {
     return;
   }
 
-  // Hub's race breakdown only renders if data is available; show the card
-  // before the chart binds so the layout is settled at first paint.
+  // Secondary cards stay hidden until their data binding succeeds. Counties
+  // can have hub data well before the first voter-history zip lands, so
+  // ballot-style and party cards must wait on hasFile (zip-derived) while
+  // race waits on hub.by_race. Showing the card before the chart binds
+  // keeps the layout settled at first paint.
   if (hasHub && data.hub.by_race) {
     document.getElementById("race-card").hidden = false;
   }
   if (hasHub && typeof data.hub.active_voters === "number") {
     document.getElementById("turnout-card").hidden = false;
+  }
+  if (hasFile && data.current.by_ballot_style) {
+    document.getElementById("style-card").hidden = false;
+  }
+  if (hasFile && data.current.by_party) {
+    document.getElementById("party-card").hidden = false;
   }
 
   renderHeadline(data);
