@@ -25,39 +25,14 @@
   --chart-empty: rgba(0, 0, 0, 0.06);
 }
 
-/* Dark tokens apply when (a) the OS prefers dark AND no override is set, OR
- * (b) the URL forces it via ?theme=dark. The :not([data-theme]) gate on the
- * media query is what lets ?theme=light win on a dark-OS machine — without
- * it the media block would clobber the light tokens. */
-@media (prefers-color-scheme: dark) {
-  :root:not([data-theme]) {
-    /* All neutrals on a single warm ramp at hue 22°, low chroma, varying
-     * lightness. This is what makes dark mode read as "the same paper at a
-     * different hour" instead of "an inverted theme." */
-    --bg: oklch(0.18 0.02 22);
-    --surface: oklch(0.21 0.018 22);
-    --ink: oklch(0.95 0.005 22);
-    --ink-soft: oklch(0.78 0.008 22);
-    --ink-muted: oklch(0.62 0.012 22);
-    --rule: oklch(0.30 0.012 22);
-
-    /* Accent: same hue zone as light, lifted in lightness for AA contrast on
-     * the dark canvas, pushed to the sRGB gamut boundary in chroma so it
-     * still reads as brand-red rather than coral at the higher luminance. */
-    --accent: oklch(0.62 0.20 22);
-    --accent-soft: oklch(0.62 0.20 22 / 0.18);
-
-    /* Drop shadows on dark canvases read as smudges. Cards are defined by
-     * the hairline border + lifted surface only. */
-    --shadow: none;
-
-    --chart-grid: oklch(1 0 0 / 0.06);
-    --chart-tick: oklch(0.78 0.008 22);
-    --chart-ring: oklch(0.21 0.018 22);
-    --chart-empty: oklch(1 0 0 / 0.05);
-  }
-}
-
+/* Dark mode is preview-only until the design pass is finished — entered
+ * exclusively via the ?theme=dark URL override (set by the inline script in
+ * index.html). The OS-based prefers-color-scheme auto-switch is intentionally
+ * not wired up here; restore it once dark is ready to ship. All neutrals on
+ * a single warm ramp at hue 22° make dark read as "the same paper at a
+ * different hour" rather than an inverted theme. The accent is lifted in
+ * lightness for AA contrast on the dark canvas, pushed to the sRGB gamut
+ * boundary in chroma so it stays brand-red rather than coral. */
 :root[data-theme="dark"] {
   --bg: oklch(0.18 0.02 22);
   --surface: oklch(0.21 0.018 22);
@@ -67,6 +42,7 @@
   --rule: oklch(0.30 0.012 22);
   --accent: oklch(0.62 0.20 22);
   --accent-soft: oklch(0.62 0.20 22 / 0.18);
+  /* Drop shadows on dark canvases read as smudges; the card edge does the work. */
   --shadow: none;
   --chart-grid: oklch(1 0 0 / 0.06);
   --chart-tick: oklch(0.78 0.008 22);
