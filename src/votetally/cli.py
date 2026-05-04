@@ -121,14 +121,14 @@ def hub(cdp_endpoint: str, county: str, no_upload: bool, no_diag: bool) -> None:
     console.print_json(data=snap.to_dict())
     if no_upload:
         return
-    _, did_write = process_hub_and_upload(snap.to_hub_data())
-    if did_write:
+    _, data_changed = process_hub_and_upload(snap.to_hub_data())
+    if data_changed:
         console.print(
             f"[green]✓[/green] turnout.json updated · hub.turnout="
             f"[bold]{snap.turnout:,}[/bold] · data_as_of {snap.data_as_of}"
         )
     else:
-        console.print("[yellow]·[/yellow] hub data unchanged; skipped R2 write")
+        console.print("[yellow]·[/yellow] hub data unchanged; refreshed heartbeat only")
 
 
 @cli.command()

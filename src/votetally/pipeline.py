@@ -72,12 +72,15 @@ def process_and_upload(zip_path: Path, *, county: str = DEFAULT_COUNTY,
 def process_hub_and_upload(
     hub_data: HubData, *, r2: R2Client | None = None,
 ) -> tuple[Turnout, bool]:
-    """Merge a hub snapshot into turnout.json and upload. Idempotent: skips
-    the write when every observable hub field matches what's in R2.
+    """Merge a hub snapshot into turnout.json and upload. Always writes so
+    last_checked_at advances (frontend uses it as a cron heartbeat). The
+    returned bool reports whether the source data itself actually changed —
+    callers can use it to print "data updated" vs "heartbeat only".
 
-    Dedup compares the full hub payload minus volatile timestamps. Comparing
-    only data_as_of would silently drop new fields (e.g. by_day_party) when
-    they appear or change between runs that share a data_as_of stamp.
+    Change detection compares the full hub payload minus volatile timestamps.
+    Comparing only data_as_of would silently drop new fields (e.g.
+    by_day_party) when they appear or change between runs that share a
+    data_as_of stamp.
     """
     if r2 is None:
         r2 = R2Client(R2Config.from_env())
