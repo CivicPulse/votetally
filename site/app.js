@@ -63,6 +63,15 @@ function renderHeadline(data) {
   document.getElementById("kicker").textContent =
     `Bibb County · ${electionDisplay(election)}`;
   document.getElementById("total").textContent = fmt.format(headlineTotal);
+
+  // Fold turnout rate + active voter base into the subtitle when the hub
+  // captured them. Editorial dek pattern, not a KPI tile — keeps the headline
+  // numeral primary while contextualizing what fraction it represents.
+  if (typeof hub.turnout_pct === "number" && typeof hub.active_voters === "number") {
+    document.getElementById("subtitle").textContent =
+      `ballots cast · ${hub.turnout_pct}% of ${fmt.format(hub.active_voters)} active voters`;
+  }
+
   document.getElementById("updated").textContent =
     headlineFreshness
       ? (hub.data_as_of
