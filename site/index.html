@@ -5,6 +5,16 @@
   <meta name="viewport" content="width=device-width, initial-scale=1" />
   <title>Bibb County Voter Turnout · 2026 General Primary</title>
 
+  <script>
+    // Dev-only theme override: ?theme=light or ?theme=dark forces a mode for
+    // visual testing without touching OS settings. Inline + synchronous so it
+    // beats first paint — putting this in app.js would cause a flash.
+    (function () {
+      var t = new URLSearchParams(location.search).get("theme");
+      if (t === "light" || t === "dark") document.documentElement.dataset.theme = t;
+    })();
+  </script>
+
   <meta name="description" content="Live tracker of Bibb County, Georgia voter turnout for the 2026 General Primary. Updated automatically from official Georgia Secretary of State files." />
   <meta name="author" content="Kerry Hatcher" />
   <meta name="theme-color" media="(prefers-color-scheme: light)" content="#a32638" />
