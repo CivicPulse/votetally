@@ -56,3 +56,12 @@ scripts/cron-hub.log
 *.swp
 .DS_Store
 Thumbs.db
+
+# CLI agent / session tooling (Claude Code, Codex, Gemini, Qwen, plugin state).
+# These directories are per-machine session caches and tool config — not
+# project code, never the same across two contributors, never useful in CI.
+.agents/
+.claude/
+.pi/
+.qwen/
+skills-lock.json
