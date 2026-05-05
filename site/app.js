@@ -544,14 +544,24 @@ function renderTurnout(data) {
 // Build all charts from a single cached data payload. Called once on initial
 // load and again on every OS theme change so the palette stays consistent
 // with the active CSS tokens.
-// Hub party data is comprehensive (early in-person + absentee + electronic,
-// summed by party) and refreshes hourly. The voter-history zip's by_party
-// is the same shape but lags by a day or more. Prefer hub when present.
+// Hub party / style data is comprehensive (composed across the dashboard's
+// three sheets) and refreshes hourly. The voter-history zip carries the
+// same fields but lags by a day or more. Prefer hub when present, fall
+// back to the zip-derived `current.*`, and return null only when both
+// are empty (in which case the card stays hidden).
 function pickPartyData(data) {
   const hubParty = data.hub && data.hub.by_party;
   if (hubParty && Object.keys(hubParty).length) return hubParty;
   const fileParty = data.current && data.current.by_party;
   if (fileParty && Object.keys(fileParty).length) return fileParty;
+  return null;
+}
+
+function pickStyleData(data) {
+  const hubStyle = data.hub && data.hub.by_ballot_style;
+  if (hubStyle && Object.keys(hubStyle).length) return hubStyle;
+  const fileStyle = data.current && data.current.by_ballot_style;
+  if (fileStyle && Object.keys(fileStyle).length) return fileStyle;
   return null;
 }
 
@@ -563,8 +573,9 @@ function renderAllCharts(data) {
   if (hasHub && data.hub.by_race) {
     renderBreakdown("race-chart", data.hub.by_race);
   }
-  if (hasFile) {
-    renderBreakdown("style-chart", data.current.by_ballot_style);
+  const styleData = pickStyleData(data);
+  if (styleData) {
+    renderBreakdown("style-chart", styleData);
   }
   const partyData = pickPartyData(data);
   if (partyData) {
@@ -616,7 +627,7 @@ async function main() {
   if (hasHub && typeof data.hub.active_voters === "number") {
     document.getElementById("turnout-card").hidden = false;
   }
-  if (hasFile && data.current.by_ballot_style) {
+  if (pickStyleData(data)) {
     document.getElementById("style-card").hidden = false;
   }
   if (pickPartyData(data)) {

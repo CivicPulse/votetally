@@ -58,6 +58,13 @@ class HubSnapshot:
     # show a party breakdown without waiting on the slower voter-history
     # zip pipeline.
     by_party: dict[str, int] = field(default_factory=dict)
+    # Ballot-style rollup composed across THREE dashboard sheets:
+    #   - "EARLY IN-PERSON"           ← Early Voting "Ballots Accepted" KPI
+    #   - "ABSENTEE BY MAIL"          ← Absentee sheet, ballot-style table row
+    #   - "ELECTRONIC BALLOT DELIVERY" ← Absentee sheet, ballot-style table row
+    # Lets the frontend show how the county's ballots were cast without
+    # waiting on the (slower, manual) voter-history zip pipeline.
+    by_ballot_style: dict[str, int] = field(default_factory=dict)
     # Per-day per-party early-voting totals scraped from the Early Voting
     # (In Person) → "by Party and Date" Qlik sub-tab. Each entry has
     # keys: date (YYYY-MM-DD), democrat, republican, non_partisan, total.
@@ -74,6 +81,7 @@ class HubSnapshot:
             "turnout_pct": self.turnout_pct,
             "by_race": self.by_race,
             "by_party": self.by_party,
+            "by_ballot_style": self.by_ballot_style,
             "by_day_party": self.by_day_party,
         }
 
@@ -568,12 +576,14 @@ def _parse_snapshot(text: str) -> HubSnapshot:
 
 def _scrape_early_voting(
     page, mashup_frame: Frame, *, diag_dir: Path | None = None,
-) -> list[dict]:
-    """Switch the mashup to Early Voting (In Person) and scrape by_day_party.
+) -> tuple[list[dict], int | None]:
+    """Switch the mashup to Early Voting (In Person) and scrape its data.
 
-    Returns [] on any non-catastrophic failure (no sub-tab, no chart text,
-    parser miss). Diagnostic dump is written either way when diag_dir is set,
-    so the parser can be tuned against real text.
+    Returns (by_day_party, ballots_accepted_kpi). Either may be empty/None
+    on a non-catastrophic failure (no sub-tab, no chart text, parser miss).
+    The KPI is the headline early-in-person count and feeds the EARLY
+    IN-PERSON bucket of `by_ballot_style`. Diag dump is written either way
+    when diag_dir is set so parsers can be tuned against real text.
     """
     _switch_sheet(page, mashup_frame, "EarlyVoting")
     # The qlik-embed swaps sheet-id; the inner iframe re-loads. Wait for a
@@ -583,13 +593,19 @@ def _scrape_early_voting(
     qlik_frame = _wait_for_qlik_text(page, "Early Voting")
     time.sleep(3)  # let bars settle
 
+    # Capture the "Ballots Accepted" KPI BEFORE clicking into the sub-tab —
+    # it lives at the top of the sheet and the click doesn't affect it, but
+    # parsing it from the same innerText we already grab is the cheap path.
+    raw_text = qlik_frame.evaluate("() => document.body.innerText")
+    ballots_accepted = _parse_kpi_int(raw_text, "Ballots Accepted")
+
     # Click the "by Party and Date" sub-tab. Order on the dashboard is:
     # by Party | by Party and Date | by Date | by County | Trend Line
     if not _select_chart_sub_tab(qlik_frame, "by Party and Date"):
         log.warning("could not select 'by Party and Date' sub-tab")
         if diag_dir:
             _dump_early_voting_diag(page, qlik_frame, diag_dir, label="no-subtab")
-        return []
+        return [], ballots_accepted
     time.sleep(2)
 
     text = qlik_frame.evaluate("() => document.body.innerText")
@@ -605,8 +621,101 @@ def _scrape_early_voting(
         )
 
     parsed = _parse_by_day_party(text)
-    log.info("parsed %d days of by_day_party rows", len(parsed))
-    return parsed
+    log.info(
+        "parsed %d days of by_day_party rows; early-in-person accepted=%s",
+        len(parsed), ballots_accepted,
+    )
+    return parsed, ballots_accepted
+
+
+def _parse_kpi_int(text: str, label: str) -> int | None:
+    """Pull an integer KPI by its label from a Qlik sheet's innerText.
+
+    KPIs render as `{label}\\n{value}` on Qlik dashboards. Used by both
+    Total Turnout (Turnout / Active Voters / etc.) and the Early Voting +
+    Absentee sheets (Ballots Accepted etc.).
+    """
+    m = re.search(rf"{re.escape(label)}\s*\n\s*{NUMBER_RE}", text)
+    if not m:
+        return None
+    with suppress(ValueError):
+        return _parse_int(m.group(1))
+    return None
+
+
+def _parse_absentee_styles(text: str) -> dict[str, int]:
+    """Parse the "Ballots Issued and Accepted by Ballot Style" table on the
+    Absentee Voting sheet.
+
+    Table shape (per row, separated by whitespace lines in innerText):
+
+        {Style name}
+        {Requested}  {Issued}  {Returned}  {Accepted}  {% Accepted}  {Rejected}
+
+    Returns {STYLE_NAME_UPPERCASE: accepted_count}. The dashboard has been
+    stable on two style rows ("Absentee by mail" and "Electronic Ballot
+    Delivery") for the 2026 cycle; if a third appears it'll be silently
+    skipped — log a warning if you see unrecognized rows in the diag dump.
+    """
+    table_marker = "Ballots Issued and Accepted by Ballot Style"
+    start = text.find(table_marker)
+    if start < 0:
+        return {}
+    end = text.find("*Data as of", start)
+    if end < 0:
+        end = len(text)
+    section = text[start:end]
+
+    out: dict[str, int] = {}
+    for label, key in [
+        ("Absentee by mail", "ABSENTEE BY MAIL"),
+        ("Electronic Ballot Delivery", "ELECTRONIC BALLOT DELIVERY"),
+    ]:
+        ix = section.find(label)
+        if ix < 0:
+            continue
+        # ~300 chars covers a single row's six numeric cells (each cell is
+        # 30-50 chars including its surrounding whitespace). The "Accepted"
+        # column is the 4th numeric value after the label — `\d[\d,]*`
+        # also picks up "100" out of "100.00%" but that's 5th in the row,
+        # so the 4th is still Accepted.
+        row = section[ix + len(label):ix + len(label) + 300]
+        nums = re.findall(r"\b(\d[\d,]*)\b", row)
+        if len(nums) >= 4:
+            with suppress(ValueError):
+                out[key] = _parse_int(nums[3])
+    return out
+
+
+def _scrape_absentee(
+    page, mashup_frame: Frame, *, diag_dir: Path | None = None,
+) -> dict[str, int]:
+    """Switch to the Absentee Voting sheet and parse the ballot-style table.
+
+    Returns {STYLE_NAME: accepted_count} for the absentee styles. Caller
+    composes the EARLY IN-PERSON bucket separately and merges them into
+    `by_ballot_style`.
+    """
+    _switch_sheet(page, mashup_frame, "AbsenteeBallots")
+    # "Absentee" is unique enough to identify this sheet's text payload.
+    qlik_frame = _wait_for_qlik_text(page, "Absentee")
+    time.sleep(3)  # let table cells render
+
+    text = qlik_frame.evaluate("() => document.body.innerText")
+    if diag_dir:
+        diag_dir.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now().strftime("%Y%m%d-%H%M%S")
+        page.screenshot(
+            path=str(diag_dir / f"hub-absentee-{stamp}.png"), full_page=True,
+        )
+        (diag_dir / f"hub-absentee-{stamp}.txt").write_text(text, encoding="utf-8")
+        log.info(
+            "absentee diagnostics → %s/hub-absentee-%s.{png,txt}", diag_dir, stamp,
+        )
+
+    styles = _parse_absentee_styles(text)
+    log.info("parsed absentee ballot styles: %s", styles)
+    return styles
 
 
 def _dump_early_voting_diag(
@@ -772,16 +881,37 @@ def fetch_hub_snapshot(
                     "Party demographic tab not clickable; by_party will be empty"
                 )
 
-            # Second pass: switch to the Early Voting (In Person) sheet and
-            # scrape the per-day-per-party breakdown. Selections persist on
-            # the Qlik app, so the BIBB filter we set on Total Turnout still
-            # applies. Best-effort — failures here don't lose the headline.
+            # Second pass: Early Voting (In Person) sheet → by_day_party
+            # (chart) + early-in-person Ballots Accepted (KPI). The county
+            # filter persists across sheet switches on the Qlik app.
+            # Best-effort — failures here don't lose the headline.
+            early_accepted: int | None = None
             try:
-                snap.by_day_party = _scrape_early_voting(
+                snap.by_day_party, early_accepted = _scrape_early_voting(
                     page, mashup_frame, diag_dir=diag_dir,
                 )
             except Exception as e:  # noqa: BLE001
                 log.warning("early voting scrape failed (non-fatal): %s", e)
+
+            # Third pass: Absentee Voting sheet → ballot-style table rows
+            # (Absentee by mail, Electronic Ballot Delivery). Compose
+            # `by_ballot_style` by merging the absentee styles with the
+            # early-in-person KPI. Best-effort: any miss leaves a partial
+            # dict that the frontend renders as best it can.
+            absentee_styles: dict[str, int] = {}
+            try:
+                absentee_styles = _scrape_absentee(
+                    page, mashup_frame, diag_dir=diag_dir,
+                )
+            except Exception as e:  # noqa: BLE001
+                log.warning("absentee scrape failed (non-fatal): %s", e)
+
+            style: dict[str, int] = {}
+            if early_accepted is not None:
+                style["EARLY IN-PERSON"] = early_accepted
+            style.update(absentee_styles)
+            snap.by_ballot_style = style
+            log.info("composed by_ballot_style: %s", snap.by_ballot_style)
 
             return snap
         finally:
