@@ -1,0 +1,74 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1200 630" width="1200" height="630">
+  <defs>
+    <style>
+      .bg { fill: #fafaf7; }
+      .rule { fill: #ececea; }
+      .accent { fill: #a32638; }
+      .ink { fill: #1a1a1a; }
+      .ink-soft { fill: #555555; }
+      .ink-muted { fill: #888888; }
+      .kicker {
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 28px;
+        font-weight: 600;
+        letter-spacing: 4px;
+        text-transform: uppercase;
+        fill: #555555;
+      }
+      .title {
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 168px;
+        font-weight: 700;
+        letter-spacing: -6px;
+        fill: #a32638;
+      }
+      .subtitle {
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 44px;
+        font-weight: 500;
+        letter-spacing: -1px;
+        fill: #1a1a1a;
+      }
+      .footer {
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 24px;
+        font-weight: 500;
+        fill: #888888;
+      }
+      .brand {
+        font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+        font-size: 24px;
+        font-weight: 600;
+        fill: #1a1a1a;
+      }
+    </style>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" width="1200" height="630" />
+
+  <!-- Top accent bar -->
+  <rect class="accent" x="0" y="0" width="1200" height="8" />
+
+  <!-- Editorial content block -->
+  <g transform="translate(80, 130)">
+    <text class="kicker" x="0" y="0">CRAWFORD COUNTY · GEORGIA</text>
+
+    <!-- Big red headline -->
+    <text class="title" x="0" y="160">Voter Turnout</text>
+
+    <!-- Subtitle -->
+    <text class="subtitle" x="0" y="240">2026 General Primary · live tracker</text>
+  </g>
+
+  <!-- Hairline rule above footer -->
+  <rect class="rule" x="80" y="540" width="1040" height="1" />
+
+  <!-- Footer row: brand + URL -->
+  <g transform="translate(80, 580)">
+    <!-- Tiny accent square as bullet -->
+    <rect class="accent" x="0" y="-18" width="20" height="20" rx="3" />
+    <text class="brand" x="36" y="-2">votetally</text>
+    <text class="footer" x="1040" y="-2" text-anchor="end">count.kerryhatcher.com</text>
+  </g>
+</svg>
